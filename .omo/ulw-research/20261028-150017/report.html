@@ -1,0 +1,199 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cloud IPAM prior art for a Terraform provider</title><style>
+:root{--ink:#1d2433;--mute:#5b6475;--line:#d9dee7;--bg:#fff;--soft:#f5f7fa;--acc:#2457c5;--warn:#a5520b;--ok:#1d7a46;--bad:#b42318}
+*{box-sizing:border-box}body{margin:0;font:15px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Helvetica,Arial,sans-serif;color:var(--ink);background:var(--bg)}
+main{max-width:1060px;margin:0 auto;padding:32px 24px 64px}
+h1{font-size:28px;line-height:1.25;margin:0 0 6px}h2{font-size:20px;margin:40px 0 10px;padding-bottom:6px;border-bottom:2px solid var(--acc)}h3{font-size:16px;margin:22px 0 6px}
+.sub{color:var(--mute);margin:0 0 20px}.tldr{background:var(--soft);border-left:4px solid var(--acc);padding:14px 18px;border-radius:6px}
+table{border-collapse:collapse;width:100%;font-size:13.5px;margin:10px 0}th,td{border:1px solid var(--line);padding:7px 9px;vertical-align:top;text-align:left}th{background:var(--soft);font-weight:600}
+code{font:12.5px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;background:#eef1f6;padding:1px 4px;border-radius:3px}
+pre{background:#0f1729;color:#e6ebf5;padding:14px 16px;border-radius:8px;overflow:auto;font:12.5px/1.5 ui-monospace,Menlo,monospace}
+pre code{background:none;color:inherit;padding:0}
+.tag{display:inline-block;font-size:11.5px;font-weight:600;padding:1px 7px;border-radius:10px;border:1px solid}
+.ok{color:var(--ok);border-color:var(--ok)}.warn{color:var(--warn);border-color:var(--warn)}.bad{color:var(--bad);border-color:var(--bad)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;margin:12px 0}
+.card{border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:#fff}.card h4{margin:0 0 6px;font-size:14px;color:var(--acc)}
+.tree{font:12.5px/1.55 ui-monospace,Menlo,monospace;white-space:pre;margin:0;color:var(--ink)}
+figure{margin:16px 0;border:1px solid var(--line);border-radius:8px;padding:14px;background:var(--soft)}figcaption{font-size:12.5px;color:var(--mute);margin-top:8px}
+.small{font-size:12.5px;color:var(--mute)}ol.src{font-size:12.5px;padding-left:22px}ol.src li{margin:2px 0;word-break:break-all}
+a{color:var(--acc)}
+@media (max-width:640px){main{padding:18px 12px}table{font-size:12px}h1{font-size:23px}}
+</style></head><body><main>
+<h1>Cloud IPAM prior art, and what it means for a Terraform IPAM provider</h1>
+<p class="sub">ULW-research synthesis · as of 2026-10-28 · 8 research lanes + 1 skeptic · 397 URLs logged across 23 domains · primary sources pinned where possible</p>
+
+<div class="tldr"><strong>Answer.</strong> Three families of prior art exist. <b>Azure/ipam</b> is a self-hosted app (Space → Block → Reservation) that hands out CIDRs and reconciles them with a VNet tag <a href="#s1">[S1]</a><a href="#s3">[S3]</a>. <b>AVNM IPAM</b> is Azure's first-party, ARM-native pool hierarchy, where a VNet or subnet asks for a <em>number of addresses</em> and gets prefixes back <a href="#s9">[S9]</a><a href="#s15">[S15]</a>. <b>AWS VPC IPAM</b> is the most complete model: IPAM → scope → nested pools → provisioned CIDRs → allocations, plus discovery, Organizations, RAM sharing, and (since 2025) policies <a href="#s18">[S18]</a><a href="#s22">[S22]</a>.<br><br>
+All of them push a provider toward the same shape:
+<ol>
+<li>Allocation is a <b>managed write at apply time</b> that chooses and reserves in one step. It is never a data source and never a "next CIDR" preview.</li>
+<li>What you ask for is configuration and what you get is computed state. For example, <code>prefix_length</code> or an address count goes in, and <code>cidr</code> or <code>allocated_prefixes</code> comes out.</li>
+<li>Pool capacity, allocations, and consumer bindings are separate resources.</li>
+<li>Uniqueness is scoped to an explicit realm (scope, space, or VRF).</li>
+<li>Create must be idempotent, so retries can recover. This is the gap that bites the existing Azure/ipam provider <a href="#s7">[S7]</a>.</li>
+</ol>
+The skeptic argued, and I agree, that a <b>backend-agnostic</b> provider is a trap. The products disagree on request shape, result cardinality, identity, and release semantics, so portability belongs in modules over backend-specific resources.</div>
+
+<h2>1. The prior art at a glance</h2>
+<figure>
+<div class="grid">
+<div class="card"><h4>Azure/ipam (OSS, self-hosted)</h4><pre class="tree" style="background:none;color:inherit;padding:0">Tenant
+ └ Space          (uniqueness realm)
+    └ Block       (CIDR, embedded)
+       ├ VNet refs     {id, active}
+       ├ Externals     → subnets → endpoints
+       └ Reservations  {id, cidr, status}
+            wait → fulfilled | cancelledByUser</pre></div>
+<div class="card"><h4>AVNM IPAM (Azure first-party)</h4><pre class="tree" style="background:none;color:inherit;padding:0">Network Manager
+ └ ipamPools (flat ARM children)
+    · parentPoolName → logical tree, ≤7 levels
+    └ staticCidrs  (prefixes | count)
+Consumers: VNet / Subnet
+  ipamPoolPrefixAllocations[
+    {pool.id, numberOfIpAddresses}
+    → allocatedAddressPrefixes[] ]</pre></div>
+<div class="card"><h4>AWS VPC IPAM</h4><pre class="tree" style="background:none;color:inherit;padding:0">IPAM (tier, operating regions)
+ └ Scope (private | public)
+    └ Pool (family, locale, rules)
+       ├ child Pool … (≤10 deep)
+       ├ Pool CIDR   (provisioned)
+       └ Allocation  (manual | VPC | subnet)
++ Resource discovery, Org admin,
+  RAM sharing, Policies (2025+)</pre></div>
+</div>
+<figcaption>Figure 1. Object hierarchies of the three products asked about, drawn from source code and API references <a href="#s1">[S1]</a><a href="#s11">[S11]</a><a href="#s12">[S12]</a><a href="#s18">[S18]</a><a href="#s21">[S21]</a>. Azure/ipam blocks are embedded documents with no ID of their own. AVNM child pools are flat ARM resources linked by name, not nested ARM children.</figcaption>
+</figure>
+
+<table>
+<tr><th>Dimension</th><th>Azure/ipam</th><th>AVNM IPAM</th><th>AWS VPC IPAM</th><th>GCP Internal Ranges</th></tr>
+<tr><td>Uniqueness realm</td><td>Space (logical collection of non-overlapping blocks) <a href="#s1">[S1]</a></td><td>Pool tree under a Network Manager <a href="#s9">[S9]</a></td><td>Scope = one network; same CIDR may repeat across scopes <a href="#s18">[S18]</a></td><td>VPC, plus peering mode and typed overlap exceptions <a href="#s29">[S29]</a></td></tr>
+<tr><td>Hierarchy</td><td>Space → Block (2 levels)</td><td>Up to 7 pool levels <a href="#s9">[S9]</a></td><td>Nested pools, default 10 deep; locale-bound <a href="#s21">[S21]</a></td><td>Flat range reserved in a VPC</td></tr>
+<tr><td>Request shape</td><td><code>size</code> (prefix length) XOR <code>cidr</code>; <code>reverse_search</code>, <code>smallest_cidr</code>; ordered multi-block fallback <a href="#s2">[S2]</a></td><td>Decimal-string <em>address count</em> (<code>numberOfIpAddresses</code>), or explicit prefixes for static CIDRs <a href="#s11">[S11]</a><a href="#s12">[S12]</a></td><td><code>netmask_length</code> XOR <code>cidr</code>; <code>allowed/disallowed_cidrs</code>; pool min/max/default netmask <a href="#s19">[S19]</a></td><td><code>prefixLength</code> XOR <code>ipCidrRange</code>; target ranges, excludes, 4 strategies <a href="#s29">[S29]</a></td></tr>
+<tr><td>Result shape</td><td>One CIDR + reservation ID + tag <code>X-IPAM-RES-ID</code></td><td><code>allocatedAddressPrefixes[]</code> (list type) <a href="#s15">[S15]</a></td><td>One CIDR + allocation ID</td><td>One CIDR + <code>users[]</code></td></tr>
+<tr><td>Consumer integration</td><td>Detached: you put the CIDR and tag on the VNet; a reconciler binds them every minute <a href="#s3">[S3]</a></td><td>Integrated: VNet/subnet Create allocates <a href="#s15">[S15]</a></td><td>Both: <code>aws_vpc.ipv4_ipam_pool_id</code> + netmask, or a manual allocation</td><td>Integrated: subnet <code>reserved_internal_range</code> <a href="#s30">[S30]</a></td></tr>
+<tr><td>Release</td><td>Delete cancels a pending reservation; on a fulfilled one it is a <b>no-op</b> <a href="#s2">[S2]</a></td><td>Delete the consumer; IPAM address space cannot be removed from VNets or pools</td><td>Manual allocations: Release API. Integrated: freed when the consumer is deleted, eventually consistent <a href="#s20">[S20]</a></td><td>Blocked while <code>users[]</code> is non-empty</td></tr>
+<tr><td>Concurrency</td><td>Cosmos ETag retry server-side; no client idempotency key</td><td><code>If-Match</code> ETags on pool mutation</td><td>Strongly consistent non-overlap within a pool; <code>ClientToken</code> <a href="#s19">[S19]</a></td><td><code>RANDOM_FIRST_N_AVAILABLE</code> sized for expected parallelism</td></tr>
+<tr><td>Discovery</td><td>Azure Resource Graph, subscription exclusions</td><td><code>getPoolUsage</code>, <code>listAssociatedResources</code> <a href="#s13">[S13]</a></td><td>Resource discoveries, Organizations, auto-import</td><td>-</td></tr>
+<tr><td>IPv6</td><td>No: IPv4 only, still in v4 <a href="#s5">[S5]</a></td><td>Yes</td><td>Yes (including Amazon-provided and BYOIP)</td><td>Explicit CIDRs only</td></tr>
+</table>
+<p class="small">Also in the survey: Alibaba Cloud VPC IPAM, which copies the AWS hierarchy one-for-one in <code>alicloud_vpc_ipam_*</code> <a href="#s32">[S32]</a>; OpenStack Neutron subnet pools and address scopes <a href="#s33">[S33]</a>; and OCI IP Address Insights, which is inventory only. IBM Cloud and DigitalOcean have no standalone IPAM in the docs we reviewed, which is an absence claim.</p>
+
+<h2>2. Facts that matter most for schema design</h2>
+<h3>Azure/ipam</h3>
+<ul>
+<li><b>Stateful allocation is <code>POST /api/spaces/{space}/blocks/{block}/reservations</code></b>, with exactly one of <code>size</code> or <code>cidr</code>. <code>POST /api/tools/nextAvailableVNet</code> only computes a CIDR and reserves nothing <a href="#s2">[S2]</a>.</li>
+<li><b>The official Terraform example is unsafe.</b> It uses an <code>external</code> data source that runs <code>curl POST</code>, so each refresh can create another reservation <a href="#s4">[S4]</a><a href="#s47">[S47]</a>.</li>
+<li><b>Reconciliation is asynchronous.</b> You tag the VNet with <code>X-IPAM-RES-ID</code>. A job scheduled every minute (a schedule, not a latency guarantee) matches the VNet's CIDR, associates it, and marks the reservation <code>fulfilled</code> <a href="#s3">[S3]</a>.</li>
+<li><b>An existing provider is already out there.</b> <code>XtratusCloud/azureipam</code> v2.0.0 is built on the Plugin Framework and has 6 resources and 10 data sources <a href="#s6">[S6]</a>. Its known problems:
+  <ul>
+  <li>It has a 10-second timeout and no idempotency key, and issue #16 reports a timeout even though the reservation was created <a href="#s7">[S7]</a>.</li>
+  <li>Reservation Update never calls the API.</li>
+  <li>Read returns an error on 404 instead of removing the resource from state.</li>
+  <li>It omits the <code>Content-Type</code> header, which v4 rejects <a href="#s8">[S8]</a>.</li>
+  </ul></li>
+<li><b>Azure/ipam v4 (PR #377) is still unreleased but in active development</b> <a href="#s5">[S5]</a>. It adds 4 routes and removes none, and makes reservation <code>id</code> nullable for rows redacted from non-admins. It returns <b>409</b> when a CIDR is unavailable and <b>503</b> in staging mode, and splits permissions between Admin and User. It stays IPv4-only.</li>
+</ul>
+<h3>AVNM IPAM</h3>
+<ul>
+<li>The pool request is a <b>count of addresses as a decimal string</b> (strings because IPv6 counts don't fit int64), and the result is a <b>list</b> of prefixes <a href="#s11">[S11]</a><a href="#s15">[S15]</a>.</li>
+<li>Native azurerm support arrived in four steps:
+  <ul>
+  <li><code>azurerm_network_manager_ipam_pool</code> in 4.23.0</li>
+  <li><code>azurerm_virtual_network.ip_address_pool</code> in 4.32.0</li>
+  <li><code>azurerm_subnet.ip_address_pool</code> in 4.38.0</li>
+  <li><code>azurerm_network_manager_ipam_pool_static_cidr</code> in 4.41.0</li>
+  </ul>
+  AzureRM rejects decreases in the count on the client side, and suppresses the <code>address_space</code> diff only while the pool block is configured <a href="#s15">[S15]</a><a href="#s16">[S16]</a>.</li>
+<li><b>Regional GA was first verified on 2025-06-12</b> in the Microsoft Docs source history <a href="#s17">[S17]</a>. Current docs show GA everywhere AVNM runs except six regions <a href="#s10">[S10]</a>. Nothing we reviewed names AVNM as the formal successor to Azure/ipam. It is the first-party managed alternative.</li>
+<li><span class="tag warn">unresolved</span> Whether a count that isn't a power of two is really split into several prefixes (e.g. 80 → /26 + /28) is unproven. The only evidence is a REST spec example that contradicts itself: it requests 65536, echoes 800, and allocates a /22 <a href="#s14">[S14]</a>. The list type is real, so model it as a list either way.</li>
+</ul>
+<h3>AWS VPC IPAM</h3>
+<ul>
+<li>AWS separates <b>provisioning</b> (adding a CIDR to a pool) from <b>allocation</b> (giving part of a pool to a child pool or resource). In Terraform these are <code>aws_vpc_ipam_pool_cidr</code> and <code>aws_vpc_ipam_pool_cidr_allocation</code> <a href="#s24">[S24]</a><a href="#s25">[S25]</a>.</li>
+<li><b>The non-overlap guarantee is narrow</b>: <code>AllocateIpamPoolCidr</code> won't overlap another allocation in the same pool. Listing and release are eventually consistent <a href="#s19">[S19]</a><a href="#s20">[S20]</a>. The 32-minute delete timeout in the AWS provider belongs to <em>pool-CIDR deprovisioning</em>, which waits for VPC and subnet allocations to drain <a href="#s24">[S24]</a>.</li>
+<li><b><code>aws_vpc_ipam_preview_next_cidr</code> is the anti-pattern to avoid.</b> It calls the API once at Create, Read just decodes state, and Delete does nothing. Parallel instances get the same CIDR <a href="#s26">[S26]</a><a href="#s27">[S27]</a>.</li>
+<li>The provider's ForceNew settings are right on pools (<code>address_family</code>, <code>locale</code>, <code>source_ipam_pool_id</code>, scope). <a href="#s23">[S23]</a></li>
+<li>Recent additions keep stretching the model: IPAM policies, prefix-list resolvers, Infoblox as an external authority, allocation tags, and BGP/RPKI. See <a href="#s22">[S22]</a>. In the research snapshot, the Terraform AWS provider had not yet added policy resources.</li>
+</ul>
+
+<h2>3. Patterns across the existing Terraform IPAM providers</h2>
+<table>
+<tr><th>Pattern</th><th>Who does it</th><th>Verdict</th></tr>
+<tr><td>Allocation resource: parent plus size, CIDR computed, inputs ForceNew, read back by remote ID</td><td>NetBox <code>netbox_available_prefix</code> <a href="#s34">[S34]</a>; BloxOne <code>next_available_id</code> <a href="#s36">[S36]</a>; AWS allocation; Xtratus reservation; phpIPAM resource; BlueCat; Alibaba</td><td><span class="tag ok">adopt</span></td></tr>
+<tr><td>Consumer-integrated allocation (the cloud network resource allocates)</td><td><code>aws_vpc</code> pool+netmask; azurerm <code>ip_address_pool</code>; google <code>reserved_internal_range</code>; OpenStack subnet pools</td><td><span class="tag ok">best when you own the consumer</span>. A third-party provider can't add arguments to <code>azurerm_virtual_network</code>.</td></tr>
+<tr><td>"Next available" data source or preview</td><td>phpIPAM <code>first_free_subnet</code> <a href="#s38">[S38]</a>; BloxOne <code>next_available_subnets</code> <a href="#s37">[S37]</a>; AWS preview <a href="#s26">[S26]</a></td><td><span class="tag bad">avoid</span> as an allocator. It is re-read during plan, reserves nothing, and races <a href="#s47">[S47]</a>.</td></tr>
+<tr><td>Temporary claim or lease while choosing</td><td>Micetro <code>temporary_claim_time</code> <a href="#s39">[S39]</a></td><td><span class="tag warn">optional</span>; useful when choosing and creating are two separate API calls</td></tr>
+<tr><td>State-only deterministic allocation</td><td><code>cidrsubnets</code>, hashicorp/subnets/cidr <a href="#s40">[S40]</a>, static-ipam <a href="#s41">[S41]</a></td><td><span class="tag warn">different product</span>. It is correct within one locked state but can't coordinate across states.</td></tr>
+<tr><td>Import of an allocation whose original request isn't stored on the server</td><td>NetBox #861 <a href="#s35">[S35]</a>; Xtratus reservation import</td><td><span class="tag bad">known pitfall</span>. Store the request (size, parent) on the server, or make those inputs optional on import.</td></tr>
+</table>
+
+<h2>4. How this should shape <em>your</em> provider</h2>
+<h3>Recommended resource and data source set</h3>
+<pre><code># realm / pool hierarchy        (AWS scope+pool, AVNM pool tree, Azure/ipam space+block)
+resource "ipam_scope"       { name; description }                     # uniqueness realm
+resource "ipam_pool"        { scope_id (RR); parent_pool_id (RR); address_family (RR)
+                              allocation_rules { min/max/default_prefix_length; strategy } }
+resource "ipam_pool_cidr"   { pool_id (RR); cidr XOR prefix_length (RR) → cidr (computed) }  # provisioned capacity
+
+# allocation: the heart of it
+resource "ipam_allocation" {
+  pool_id        = ...        # RequiresReplace
+  prefix_length  = 24         # XOR cidr; RequiresReplace (or RequiresReplaceIf grow-only)
+  allocation_key = "app1-prod"# stable idempotency key, RequiresReplace
+  description    = ...        # in-place
+  # computed: id, cidr (UseStateForUnknown), status, consumers[], created_at
+}
+resource "ipam_external_reservation" { … }   # on-prem / non-integrated space (AVNM static CIDR, Azure/ipam externals, GCP EXTERNAL_TO_VPC)
+resource "ipam_association"          { allocation_id; resource_id }   # explicit consumer binding, if the backend has it
+
+data "ipam_pool" / "ipam_pools" / "ipam_pool_usage"   # usage split from the mutable pool (AVNM getPoolUsage pattern)
+data "ipam_allocations"                                # filtered lookup for expressions
+list "ipam_allocation"                                 # TF 1.14 terraform query → bulk import (optional; not in OpenTofu 1.13)
+function "provider::ipam::cidr_contains" etc.          # pure math only, never "next available"</code></pre>
+
+<h3>Schema rules drawn from the evidence</h3>
+<ol>
+<li><b>Allocation happens only in Create.</b> Never in Read, never in a data source, never in an action. Actions have no output you can reference and can't modify state <a href="#s45">[S45]</a>. Provider functions must be pure <a href="#s46">[S46]</a>.</li>
+<li><b>Keep request and result in separate fields when they are different concepts</b>, like a count versus a list of prefixes, or a length versus a CIDR. Optional+Computed on one field is fine when a single field can be either set explicitly or chosen by the server. AWS #45844 and #46795 were missing-Computed and update-branch bugs, not proof that the pattern is broken <a href="#s28">[S28]</a>.</li>
+<li><b>Server-chosen values are Computed with <code>UseStateForUnknown</code></b>, and allocation inputs are <code>RequiresReplace</code> <a href="#s42">[S42]</a>. Use <code>RequiresReplaceIf</code> only where the backend really supports growing in place (AVNM count increases).</li>
+<li><b>Model results as lists where the backend can return several prefixes</b> (AVNM). Use decimal strings or big integers for address counts.</li>
+<li><b>Use an immutable remote allocation ID as resource identity</b> (TF 1.12+ identity plus a legacy import ID), never the CIDR alone <a href="#s43">[S43]</a>. Prefer composite IDs like <code>space/block/id</code> over scanning every space.</li>
+<li><b>Recover ambiguous creates</b> with a caller-supplied <code>allocation_key</code> stored on the server and searchable. If a create times out after it committed, look it up by key before trying again. A mutex in the provider protects only one process.</li>
+<li><b>Release is a state machine.</b> Delete should wait until the allocation is gone, treat 404 as success, and document backend quirks: AWS release is eventually consistent, and Azure/ipam fulfilled-reservation deletes are no-ops.</li>
+<li><b>Scope uniqueness to a realm</b> and give overlap its own explicit policy. NetBox VRFs allow duplicates unless you set <code>enforce_unique</code>, and GCP uses typed overlap exceptions. A realm ID alone doesn't define overlap behavior.</li>
+<li><b>Map error codes deliberately</b>: 409 means exhausted or conflicting, so don't retry. 401/403 are auth failures. 429/503 get bounded backoff. Never replay a non-idempotent POST.</li>
+<li><b>The Terraform 1.14 extras stay optional.</b> These are list resources and actions; OpenTofu 1.13 doesn't document either <a href="#s44">[S44]</a><a href="#s48">[S48]</a>.</li>
+</ol>
+
+<h3>The strategic choice: which backend?</h3>
+<table>
+<tr><th>Option</th><th>Assessment</th></tr>
+<tr><td>A. Backend-agnostic "cloud IPAM" provider (one <code>ipam_allocation</code> covering AWS, AVNM, Azure/ipam…)</td><td><span class="tag bad">not recommended</span> The backends disagree on request type (length, count, or CIDR), result cardinality, identity, ownership, release, and scope. A shared schema ends up either as a lowest common denominator or as a union of mutually exclusive fields, and switching backends always destroys and recreates. Put portability in a <b>module</b> that exposes <code>allocated_prefixes</code>, <code>allocation_id</code>, and <code>scope</code> over backend-specific resources.</td></tr>
+<tr><td>B. Wrap AWS IPAM or AVNM</td><td><span class="tag bad">redundant</span> The aws and azurerm providers already cover both, with consumer-integrated allocation you can't reproduce from outside.</td></tr>
+<tr><td>C. Provider for Azure/ipam (fork or contribute to Xtratus)</td><td><span class="tag ok">clearest gap</span> The current provider has idempotency, timeout, 404-handling, Content-Type, and import defects. v4 isn't released yet, so pin to its OpenAPI spec and push for a reservation idempotency key upstream.</td></tr>
+<tr><td>D. Your own IPAM backend plus provider</td><td><span class="tag warn">only if you're building the service too</span> If so, copy the AWS split (scope → pool → pool CIDR → allocation), GCP's strategies and exclusions, AVNM's usage and association reads, and AWS <code>ClientToken</code>-style idempotency from the start.</td></tr>
+</table>
+<p>My recommendation is <b>C</b> if the goal is IPAM for Azure estates, or <b>D</b> if the goal is a multi-cloud address authority you control. In both cases, build the resource set and rules above around one backend's real contract instead of a lowest-common-denominator abstraction.</p>
+
+<h2>5. Debate record and corrections</h2>
+<table>
+<tr><th>Claim as first reported</th><th>Skeptic's attack</th><th>Verdict</th></tr>
+<tr><td>Allocation must be a standalone resource with atomic Create</td><td>Consumer Create (aws_vpc, azurerm pool block) and state-only allocators are valid too</td><td><span class="tag warn">reworded</span> to "a managed write at apply time"</td></tr>
+<tr><td>AWS release takes 20-30 min, hence the 32-min timeout</td><td>The timeout is for pool-CIDR deprovisioning; 20-30 min is observed behavior, not an SLA</td><td><span class="tag warn">reworded</span></td></tr>
+<tr><td>AVNM GA on 2025-06-25</td><td>Docs history shows regional GA on 2025-06-12</td><td><span class="tag bad">corrected</span></td></tr>
+<tr><td>AVNM splits 80 addresses into /26 + /28</td><td>The only evidence is a self-contradicting spec example (I fetched and checked it)</td><td><span class="tag warn">unresolved</span></td></tr>
+<tr><td>Only two integration topologies exist</td><td>State-only and composite (Crossplane, modules) approaches are missing</td><td><span class="tag bad">refuted as exhaustive</span></td></tr>
+<tr><td>Optional+Computed caused AWS bugs</td><td>The issues are missing Computed and update-logic bugs</td><td><span class="tag bad">refuted</span>; recommendation narrowed</td></tr>
+<tr><td>Scope uniqueness by routing domain</td><td>VRFs allow duplicates by default; Azure/ipam spaces aren't routing domains</td><td><span class="tag warn">reworded</span> to "realm plus overlap policy"</td></tr>
+</table>
+
+<h2>6. Gaps</h2>
+<ul>
+<li>No live AVNM test was run on multi-prefix decomposition, and Xtratus v2 wasn't tested against an Azure/ipam v4 container.</li>
+<li>The ordering and concurrency guarantees of Alibaba's allocation API weren't checked.</li>
+<li>The absence claims for IBM and DigitalOcean rest on one documentation set each.</li>
+<li>Methodology limits: the attached browser was unavailable (BrowserSkill <code>no-daemon</code>), so lanes read primary docs and pinned source through direct fetches and shallow clones. Team mode was unavailable, so background task lanes were used instead. The fact-ledger and report-gate tooling wasn't run; sources are cited inline instead.</li>
+</ul>
+
+<h2>Sources</h2>
+<ol class="src"><li id="s1">Azure/ipam engine models (v3.6.0, pinned) - <a href="https://github.com/Azure/ipam/blob/12e41f4b93a7e5f3c61a859428c32137440037b2/engine/app/models.py">https://github.com/Azure/ipam/blob/12e41f4b93a7e5f3c61a859428c32137440037b2/engine/app/models.py</a> (accessed 2026-10-28)</li><li id="s2">Azure/ipam space router: reservations, delete-as-cancel - <a href="https://github.com/Azure/ipam/blob/12e41f4b93a7e5f3c61a859428c32137440037b2/engine/app/routers/space.py">https://github.com/Azure/ipam/blob/12e41f4b93a7e5f3c61a859428c32137440037b2/engine/app/routers/space.py</a> (accessed 2026-10-28)</li><li id="s3">Azure/ipam reconciler (X-IPAM-RES-ID) - <a href="https://github.com/Azure/ipam/blob/12e41f4b93a7e5f3c61a859428c32137440037b2/engine/app/routers/azure.py#L860-L942">https://github.com/Azure/ipam/blob/12e41f4b93a7e5f3c61a859428c32137440037b2/engine/app/routers/azure.py#L860-L942</a> (accessed 2026-10-28)</li><li id="s4">Azure/ipam official Terraform example (external data source + curl POST) - <a href="https://github.com/Azure/ipam/blob/12e41f4b93a7e5f3c61a859428c32137440037b2/examples/ipam-terraform/main.tf">https://github.com/Azure/ipam/blob/12e41f4b93a7e5f3c61a859428c32137440037b2/examples/ipam-terraform/main.tf</a> (accessed 2026-10-28)</li><li id="s5">Azure/ipam v4 PR #377 - <a href="https://github.com/Azure/ipam/pull/377">https://github.com/Azure/ipam/pull/377</a> (accessed 2026-10-28)</li><li id="s6">XtratusCloud/azureipam provider (v2.0.0 source) - <a href="https://github.com/XtratusCloud/terraform-provider-azureipam/blob/efef90b56051f82fc50060c026da0e32fb46a4b9/internal/provider/provider.go">https://github.com/XtratusCloud/terraform-provider-azureipam/blob/efef90b56051f82fc50060c026da0e32fb46a4b9/internal/provider/provider.go</a> (accessed 2026-10-28)</li><li id="s7">XtratusCloud issue #16: timeout after reservation created - <a href="https://github.com/XtratusCloud/terraform-provider-azureipam/issues/16">https://github.com/XtratusCloud/terraform-provider-azureipam/issues/16</a> (accessed 2026-10-28)</li><li id="s8">XtratusCloud issue #25: missing Content-Type vs v4 - <a href="https://github.com/XtratusCloud/terraform-provider-azureipam/issues/25">https://github.com/XtratusCloud/terraform-provider-azureipam/issues/25</a> (accessed 2026-10-28)</li><li id="s9">AVNM IPAM concept (Microsoft Learn) - <a href="https://learn.microsoft.com/en-us/azure/virtual-network-manager/concept-ip-address-management">https://learn.microsoft.com/en-us/azure/virtual-network-manager/concept-ip-address-management</a> (accessed 2026-10-28)</li><li id="s10">AVNM IPAM how-to + current region availability - <a href="https://learn.microsoft.com/en-us/azure/virtual-network-manager/how-to-manage-ip-addresses-network-manager">https://learn.microsoft.com/en-us/azure/virtual-network-manager/how-to-manage-ip-addresses-network-manager</a> (accessed 2026-10-28)</li><li id="s11">ARM ref: networkManagers/ipamPools - <a href="https://learn.microsoft.com/en-us/azure/templates/microsoft.network/networkmanagers/ipampools">https://learn.microsoft.com/en-us/azure/templates/microsoft.network/networkmanagers/ipampools</a> (accessed 2026-10-28)</li><li id="s12">ARM ref: ipamPools/staticCidrs - <a href="https://learn.microsoft.com/en-us/azure/templates/microsoft.network/networkmanagers/ipampools/staticcidrs">https://learn.microsoft.com/en-us/azure/templates/microsoft.network/networkmanagers/ipampools/staticcidrs</a> (accessed 2026-10-28)</li><li id="s13">REST: ipamPools getPoolUsage - <a href="https://learn.microsoft.com/en-us/rest/api/virtualnetwork/ipam-pools/get-pool-usage?view=rest-virtualnetwork-2026-01-01">https://learn.microsoft.com/en-us/rest/api/virtualnetwork/ipam-pools/get-pool-usage?view=rest-virtualnetwork-2026-01-01</a> (accessed 2026-10-28)</li><li id="s14">REST example VirtualNetworkCreateWithIpamPool (internally inconsistent) - <a href="https://raw.githubusercontent.com/Azure/azure-rest-api-specs/main/specification/network/resource-manager/Microsoft.Network/Network/Network/examples/2026-03-01/VirtualNetworkCreateWithIpamPool.json">https://raw.githubusercontent.com/Azure/azure-rest-api-specs/main/specification/network/resource-manager/Microsoft.Network/Network/Network/examples/2026-03-01/VirtualNetworkCreateWithIpamPool.json</a> (accessed 2026-10-28)</li><li id="s15">azurerm virtual_network resource source (ip_address_pool) - <a href="https://github.com/hashicorp/terraform-provider-azurerm/blob/main/internal/services/network/virtual_network_resource.go">https://github.com/hashicorp/terraform-provider-azurerm/blob/main/internal/services/network/virtual_network_resource.go</a> (accessed 2026-10-28)</li><li id="s16">azurerm ipam_pool_static_cidr source - <a href="https://github.com/hashicorp/terraform-provider-azurerm/blob/main/internal/services/networkmanager/network_manager_ipam_pool_static_cidr_resource.go">https://github.com/hashicorp/terraform-provider-azurerm/blob/main/internal/services/networkmanager/network_manager_ipam_pool_static_cidr_resource.go</a> (accessed 2026-10-28)</li><li id="s17">MicrosoftDocs commit: AVNM IPAM preview -> regional GA (2025-06-12) - <a href="https://github.com/MicrosoftDocs/azure-docs/commit/89c42cd36a9928b34e556c2388dc1499a3868744">https://github.com/MicrosoftDocs/azure-docs/commit/89c42cd36a9928b34e556c2388dc1499a3868744</a> (accessed 2026-10-28)</li><li id="s18">AWS: How IPAM works - <a href="https://docs.aws.amazon.com/vpc/latest/ipam/how-it-works-ipam.html">https://docs.aws.amazon.com/vpc/latest/ipam/how-it-works-ipam.html</a> (accessed 2026-10-28)</li><li id="s19">AWS API: AllocateIpamPoolCidr - <a href="https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_AllocateIpamPoolCidr.html">https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_AllocateIpamPoolCidr.html</a> (accessed 2026-10-28)</li><li id="s20">AWS API: ReleaseIpamPoolAllocation - <a href="https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_ReleaseIpamPoolAllocation.html">https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_ReleaseIpamPoolAllocation.html</a> (accessed 2026-10-28)</li><li id="s21">AWS API: CreateIpamPool - <a href="https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CreateIpamPool.html">https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_CreateIpamPool.html</a> (accessed 2026-10-28)</li><li id="s22">AWS: IPAM policies - <a href="https://docs.aws.amazon.com/vpc/latest/ipam/ipam-policies.html">https://docs.aws.amazon.com/vpc/latest/ipam/ipam-policies.html</a> (accessed 2026-10-28)</li><li id="s23">terraform-provider-aws vpc_ipam_pool.go - <a href="https://github.com/hashicorp/terraform-provider-aws/blob/main/internal/service/ec2/vpc_ipam_pool.go">https://github.com/hashicorp/terraform-provider-aws/blob/main/internal/service/ec2/vpc_ipam_pool.go</a> (accessed 2026-10-28)</li><li id="s24">terraform-provider-aws vpc_ipam_pool_cidr.go (32-min delete wait) - <a href="https://github.com/hashicorp/terraform-provider-aws/blob/main/internal/service/ec2/vpc_ipam_pool_cidr.go">https://github.com/hashicorp/terraform-provider-aws/blob/main/internal/service/ec2/vpc_ipam_pool_cidr.go</a> (accessed 2026-10-28)</li><li id="s25">terraform-provider-aws vpc_ipam_pool_cidr_allocation.go - <a href="https://github.com/hashicorp/terraform-provider-aws/blob/main/internal/service/ec2/vpc_ipam_pool_cidr_allocation.go">https://github.com/hashicorp/terraform-provider-aws/blob/main/internal/service/ec2/vpc_ipam_pool_cidr_allocation.go</a> (accessed 2026-10-28)</li><li id="s26">terraform-provider-aws vpc_ipam_preview_next_cidr.go - <a href="https://github.com/hashicorp/terraform-provider-aws/blob/main/internal/service/ec2/vpc_ipam_preview_next_cidr.go">https://github.com/hashicorp/terraform-provider-aws/blob/main/internal/service/ec2/vpc_ipam_preview_next_cidr.go</a> (accessed 2026-10-28)</li><li id="s27">terraform-provider-aws #25958: duplicate preview CIDRs - <a href="https://github.com/hashicorp/terraform-provider-aws/issues/25958">https://github.com/hashicorp/terraform-provider-aws/issues/25958</a> (accessed 2026-10-28)</li><li id="s28">terraform-provider-aws #46795: IPAM subnet update drops IPv6 CIDR - <a href="https://github.com/hashicorp/terraform-provider-aws/issues/46795">https://github.com/hashicorp/terraform-provider-aws/issues/46795</a> (accessed 2026-10-28)</li><li id="s29">GCP REST: internalRanges - <a href="https://cloud.google.com/network-connectivity/docs/reference/networkconnectivity/rest/v1/projects.locations.internalRanges">https://cloud.google.com/network-connectivity/docs/reference/networkconnectivity/rest/v1/projects.locations.internalRanges</a> (accessed 2026-10-28)</li><li id="s30">GCP: create and use internal ranges - <a href="https://cloud.google.com/vpc/docs/create-use-internal-ranges">https://cloud.google.com/vpc/docs/create-use-internal-ranges</a> (accessed 2026-10-28)</li><li id="s31">google provider: network_connectivity_internal_range - <a href="https://github.com/hashicorp/terraform-provider-google/blob/main/website/docs/r/network_connectivity_internal_range.html.markdown">https://github.com/hashicorp/terraform-provider-google/blob/main/website/docs/r/network_connectivity_internal_range.html.markdown</a> (accessed 2026-10-28)</li><li id="s32">alicloud: vpc_ipam_ipam_pool_allocation - <a href="https://github.com/aliyun/terraform-provider-alicloud/blob/master/website/docs/r/vpc_ipam_ipam_pool_allocation.html.markdown">https://github.com/aliyun/terraform-provider-alicloud/blob/master/website/docs/r/vpc_ipam_ipam_pool_allocation.html.markdown</a> (accessed 2026-10-28)</li><li id="s33">OpenStack Neutron subnet pools - <a href="https://docs.openstack.org/neutron/latest/admin/config-subnet-pools.html">https://docs.openstack.org/neutron/latest/admin/config-subnet-pools.html</a> (accessed 2026-10-28)</li><li id="s34">NetBox provider: available_prefix resource - <a href="https://github.com/e-breuninger/terraform-provider-netbox/blob/master/netbox/resource_netbox_available_prefix.go">https://github.com/e-breuninger/terraform-provider-netbox/blob/master/netbox/resource_netbox_available_prefix.go</a> (accessed 2026-10-28)</li><li id="s35">NetBox provider issue #861: import of available_ip_address forces replace - <a href="https://github.com/e-breuninger/terraform-provider-netbox/issues/861">https://github.com/e-breuninger/terraform-provider-netbox/issues/861</a> (accessed 2026-10-28)</li><li id="s36">BloxOne provider ipam_subnet model (next_available_id) - <a href="https://github.com/infobloxopen/terraform-provider-bloxone/blob/master/internal/service/ipam/model_ipamsvc_subnet.go">https://github.com/infobloxopen/terraform-provider-bloxone/blob/master/internal/service/ipam/model_ipamsvc_subnet.go</a> (accessed 2026-10-28)</li><li id="s37">BloxOne issue #294: next-available preview race - <a href="https://github.com/infobloxopen/terraform-provider-bloxone/issues/294">https://github.com/infobloxopen/terraform-provider-bloxone/issues/294</a> (accessed 2026-10-28)</li><li id="s38">phpIPAM first_free_subnet data source docs - <a href="https://github.com/lord-kyron/terraform-provider-phpipam/blob/master/docs/data-sources/first_free_subnet.md">https://github.com/lord-kyron/terraform-provider-phpipam/blob/master/docs/data-sources/first_free_subnet.md</a> (accessed 2026-10-28)</li><li id="s39">Men&Mice/Micetro range resource (temporary_claim_time) - <a href="https://github.com/menandmice/terraform-provider-menandmice/blob/develop/menandmice/resource_range.go">https://github.com/menandmice/terraform-provider-menandmice/blob/develop/menandmice/resource_range.go</a> (accessed 2026-10-28)</li><li id="s40">hashicorp/subnets/cidr module - <a href="https://github.com/hashicorp/terraform-cidr-subnets">https://github.com/hashicorp/terraform-cidr-subnets</a> (accessed 2026-10-28)</li><li id="s41">gimletlabs static-ipam (state-only allocator) - <a href="https://github.com/gimletlabs/terraform-provider-static-ipam">https://github.com/gimletlabs/terraform-provider-static-ipam</a> (accessed 2026-10-28)</li><li id="s42">Terraform plugin framework: plan modification - <a href="https://developer.hashicorp.com/terraform/plugin/framework/resources/plan-modification">https://developer.hashicorp.com/terraform/plugin/framework/resources/plan-modification</a> (accessed 2026-10-28)</li><li id="s43">Terraform plugin framework: resource identity - <a href="https://developer.hashicorp.com/terraform/plugin/framework/resources/identity">https://developer.hashicorp.com/terraform/plugin/framework/resources/identity</a> (accessed 2026-10-28)</li><li id="s44">Terraform plugin framework: list resources (TF 1.14) - <a href="https://developer.hashicorp.com/terraform/plugin/framework/list-resources">https://developer.hashicorp.com/terraform/plugin/framework/list-resources</a> (accessed 2026-10-28)</li><li id="s45">Terraform plugin framework: actions - <a href="https://developer.hashicorp.com/terraform/plugin/framework/actions/implementation">https://developer.hashicorp.com/terraform/plugin/framework/actions/implementation</a> (accessed 2026-10-28)</li><li id="s46">Terraform plugin framework: function concepts (purity) - <a href="https://developer.hashicorp.com/terraform/plugin/framework/functions/concepts">https://developer.hashicorp.com/terraform/plugin/framework/functions/concepts</a> (accessed 2026-10-28)</li><li id="s47">Terraform data sources (read during plan) - <a href="https://developer.hashicorp.com/terraform/language/data-sources">https://developer.hashicorp.com/terraform/language/data-sources</a> (accessed 2026-10-28)</li><li id="s48">OpenTofu 1.13 release notes - <a href="https://opentofu.org/blog/opentofu-1-13-0/">https://opentofu.org/blog/opentofu-1-13-0/</a> (accessed 2026-10-28)</li></ol>
+<p class="small">Full journal: <code>.omo/ulw-research/20261028-150017/</code> (brief, lane returns, sources ledger, claim graph, debate log, verification).</p>
+</main></body></html>
