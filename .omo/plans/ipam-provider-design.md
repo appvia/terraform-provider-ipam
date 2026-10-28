@@ -22,7 +22,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
 
 ---
 
-> TL;DR (machine): XL / Medium risk - new repo github.com/appvia/ipam (lib + storage s3/azblob/local/memory + cobra CLI) and provider appvia/terraform-provider-ipam (ipam_pool, ipam_allocation resources + data sources), ETag-CAS on one JSON doc per pool.
+> TL;DR (machine): XL / Medium risk - new repo github.com/appvia/ipam (root package `ipam` client entrypoint + public `storage/*` backends + `internal/{alloc,document}` + cobra CLI, no `pkg/`) and provider appvia/terraform-provider-ipam (ipam_pool, ipam_allocation resources + data sources), ETag-CAS on one JSON doc per pool.
 
 ## Scope
 ### Affected user and ideal state
@@ -51,11 +51,13 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
 
 ### Must have
 - Client repo `/Volumes/code/ipam`, module `github.com/appvia/ipam`, Apache-2.0, with these packages:
-  - `pkg/storage`: the interface and its errors.
-  - `pkg/storage/{memory,local,s3,azblob}`: the backends.
-  - `pkg/storage/storagetest`: the shared contract suite.
-  - `pkg/storage/config`: a URL-based factory.
-  - `pkg/ipam`: model, canonicalisation, allocator and `Client` service.
+  - No `pkg/` directory. The module root is the client entrypoint.
+  - `ipam` (module root, import path `github.com/appvia/ipam`): `Client`, `New`, `Open`, the public types `Pool`/`Allocation`/`PoolSpec`/`AllocationSpec`, and the typed errors.
+  - `storage`: the public `Storage` interface and its errors. It must stay public: it appears in `ipam.New`'s signature, and the provider is a separate module that cannot import `internal/`.
+  - `storage/{memory,local,s3,azblob}`: the public backends, so the provider and other callers can build them with typed config.
+  - `storage/storagetest`: the shared contract suite, public so third-party backends can run it.
+  - `internal/alloc`: the pure CIDR allocator over `netip` types.
+  - `internal/document`: the v1 on-disk JSON schema codec, kept separate so the public Go types and the stored format can change independently.
   - `cmd/ipam`: the cobra CLI.
 - Provider repo `/Volumes/code/terraform-provider-ipam`, module `github.com/appvia/terraform-provider-ipam`, MPL-2.0, terraform-plugin-framework, protocol 6.0, registry address `registry.terraform.io/appvia/ipam`, with:
   - resources `ipam_pool` and `ipam_allocation`;
@@ -133,7 +135,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
     - Add `mise.toml` pinning go, modelled on `/Volumes/code/terraform-provider-wayfinder/mise.toml`.
     - Add `.github/workflows/test.yml`: go test + lint on push/PR, with an integration job running Azurite via `npx` and MinIO via its binary.
     - Add a `README.md` skeleton with sections Overview, Concepts, Storage backends, CLI, Library usage.
-    - Add `doc.go` stubs for `pkg/ipam`, `pkg/storage`.
+    - Add `doc.go` stubs for the root package `ipam` (repo root) and `storage/`. No `pkg/` directory.
     - Run `codegraph init` and make sure `.codegraph/` is gitignored.
   - **Must NOT do:**
     - Do not create a GitHub remote or push.
@@ -154,7 +156,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Recommended task executor category:** `quick` (mechanical scaffolding from a sibling repo).
 
 - [ ] 2. Storage interface, errors, memory backend, contract suite
-  - **What to do (TDD):** In `pkg/storage/storage.go` define:
+  - **What to do (TDD):** In `storage/storage.go` define:
     ```go
     type Version string // opaque ETag, round-tripped unchanged
     type Storage interface {
@@ -165,14 +167,14 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
       List(ctx context.Context, prefix string) ([]string, error) // keys, sorted
     }
     ```
-    - Sentinel errors in `pkg/storage/errors.go`:
+    - Sentinel errors in `storage/errors.go`:
       - `ErrNotFound` for a missing object.
       - `ErrPreconditionFailed` for an ETag mismatch, or an existing object on create.
-    - `pkg/storage/memory`:
+    - `storage/memory`:
       - Mutex-guarded map; data is copied on read and write.
       - Monotonic integer version.
       - A hook (`BeforeWrite func(op, key string)`) so tests can inject barriers.
-    - `pkg/storage/storagetest.Run(t *testing.T, newStore func(t *testing.T) storage.Storage)` covers:
+    - `storage/storagetest.Run(t *testing.T, newStore func(t *testing.T) storage.Storage)` covers:
       - Get on a missing key gives `ErrNotFound`.
       - Create then Get round-trips bytes and version.
       - A second Create gives `ErrPreconditionFailed`.
@@ -191,7 +193,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **References:**
     - Ultrabrain spec, recorded in draft D9: conditional ops, error mapping, monotonic ETag memory store.
     - S3 conditional writes: https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html
-  - **Acceptance criteria:** `go test ./pkg/storage/... -race -count=1` passes and includes `TestMemoryContract`.
+  - **Acceptance criteria:** `go test ./storage/... -race -count=1` passes and includes `TestMemoryContract`.
   - **QA scenarios:**
     - **Happy:** the contract suite passes on memory.
     - **Failure:** temporarily breaking the memory backend's version check, in a scratch copy only, makes `storagetest` fail. Record the output, then discard the scratch copy.
@@ -200,7 +202,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Recommended task executor category:** `deep-low` (concurrency contract correctness).
 
 - [ ] 3. Domain model, canonicalisation and JSON schema v1
-  - **What to do (TDD) in `pkg/ipam`:**
+  - **What to do (TDD):** Public types live in the root package `ipam` (`types.go`, `canonical.go`). The JSON codec lives in `internal/document`, which defines its own v1 structs and must NOT import the root package (no import cycle). The root package converts between public types and documents.
     - **Types:** `Pool{ID, Family(4|6), CIDRs []netip.Prefix, Parent *ParentRef{PoolID, Key}, Description, Labels map[string]string, Allocations map[string]Allocation}`, `Allocation{Key, Request Request, CIDR netip.Prefix, Description, Labels, CreatedAt time.Time}`, and `Request{Kind:"next"|"explicit", PrefixLength int, CIDR netip.Prefix}`.
     - **Pool ID:** regex `^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`.
     - **Allocation key:** 1-255 bytes of UTF-8 with no control chars; it may contain `/`.
@@ -216,7 +218,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
       - Decode rejects a missing `schema_version` and returns `ErrUnsupportedSchema` for any version other than 1.
       - Decode checks `pool_id` matches the object key and re-validates every invariant (containment, non-overlap).
     - **Object key layout:** `<prefix>pools/<pool_id>.json`.
-    - **Typed errors** (`errors.Is`-able, in `pkg/ipam/errors.go`): `ErrNotFound`, `ErrConflict`, `ErrPoolExhausted`, `ErrInvalidCIDR`, `ErrInvalidArgument`, `ErrUnsupportedSchema`. Also `*OpError{Op, Pool, Key, Reason string, Err error}` with `Unwrap`.
+    - **Typed errors** (`errors.Is`-able, in root `errors.go`; `internal/document` returns its own sentinels, which the root package wraps into `ipam.ErrUnsupportedSchema`/`ErrInvalidCIDR`): `ErrNotFound`, `ErrConflict`, `ErrPoolExhausted`, `ErrInvalidCIDR`, `ErrInvalidArgument`, `ErrUnsupportedSchema`. Also `*OpError{Op, Pool, Key, Reason string, Err error}` with `Unwrap`.
   - **Must NOT do:**
     - Do not put the ETag in the document.
     - No reservation type.
@@ -224,8 +226,8 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Parallelization:** Wave 1 | Blocked by: 1 | Blocks: 4,5
   - **References:** draft D1, D9, D10, D11; ultrabrain spec sections 1 and 6, folded into D9.
   - **Acceptance criteria:**
-    - `go test ./pkg/ipam -run 'TestCanonical|TestCodec' -count=1` passes.
-    - Golden file `pkg/ipam/testdata/pool_v1.json` round-trips byte-identically.
+    - `go test . ./internal/document -run 'TestCanonical|TestCodec' -count=1` passes.
+    - Golden file `internal/document/testdata/pool_v1.json` round-trips byte-identically.
   - **QA scenarios:**
     - **Happy:** `10.0.0.5/16` is stored as `10.0.0.0/16`; `::ffff:10.0.0.0/104` is stored as `10.0.0.0/8`.
     - **Failure:** `schema_version: 2` gives `ErrUnsupportedSchema`; a mixed-family pool gives `ErrInvalidCIDR`; overlapping CIDRs give `ErrInvalidCIDR`.
@@ -234,15 +236,15 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Recommended task executor category:** `deep-low` (exact invariants).
 
 - [ ] 4. Pure CIDR allocator (next-available and explicit)
-  - **What to do (TDD):** Write `pkg/ipam/allocator.go` as pure functions with no I/O.
-    - **`NextPrefix(pool Pool, length int) (netip.Prefix, error)`:**
+  - **What to do (TDD):** Write `internal/alloc/alloc.go` as pure functions over `netip` types only, with no I/O and no import of the root package. Signatures: `Next(parents, used []netip.Prefix, length int) (netip.Prefix, error)` and `CheckExplicit(parents, used []netip.Prefix, cidr netip.Prefix) error`. It returns `alloc.ErrInvalidCIDR`, `alloc.ErrExhausted` and `alloc.ErrOverlap`, which the root package maps to `ipam.ErrInvalidCIDR`, `ipam.ErrPoolExhausted` and `ipam.ErrConflict` (Reason `overlap`).
+    - **`Next`:**
       - `length` must be within the family's width and `>=` the bits of at least one parent CIDR, otherwise `ErrInvalidCIDR`.
       - For each eligible parent CIDR on its own:
         1. Build a `go4.org/netipx.IPSetBuilder`, add the parent, and remove every existing allocation CIDR.
         2. From the free set's `Prefixes()`, take every free block `f` with `f.Bits() <= length`; the candidate is `netip.PrefixFrom(f.Addr(), length).Masked()`.
       - Pick the candidate with the lowest address across all parents.
       - No candidate gives `ErrPoolExhausted`.
-    - **`CheckExplicit(pool, cidr)`:**
+    - **`CheckExplicit`:**
       - The CIDR must sit wholly inside one parent CIDR and match the family, otherwise `ErrInvalidCIDR`.
       - Any intersection with an existing allocation gives `ErrConflict` with Reason `overlap`.
     - **Tests:** the ultrabrain matrix rows for Next IPv4/IPv6, multiple parents and explicit allocation.
@@ -254,15 +256,16 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Closes:** GAP-1
   - **Parallelization:** Wave 1 | Blocked by: 3 | Blocks: 5
   - **References:** draft D6, D9; go4.org/netipx `IPSetBuilder`, `IPSet.Prefixes`; Go `net/netip`.
-  - **Acceptance criteria:** `go test ./pkg/ipam -run 'TestNext|TestExplicit|TestProperty' -count=1 -race` passes.
+  - **Acceptance criteria:** `go test ./internal/alloc -count=1 -race` passes, including `TestNext`, `TestExplicit` and `TestProperty`.
   - **QA scenarios:**
     - **Happy:** in an empty `10.0.0.0/16`, next `/24` gives `10.0.0.0/24`, then `10.0.1.0/24`; with an explicit `10.0.0.128/25` held, next `/24` gives `10.0.1.0/24`.
     - **Failure:** a `/24` pool asked for a `/16` gives `ErrInvalidCIDR`; a full pool gives `ErrPoolExhausted`.
     - **Evidence:** `<attemptDir>/task-4-ipam-provider-design.txt`
-  - **Commit:** Y | `feat(ipam): add deterministic CIDR allocator`
+  - **Commit:** Y | `feat(alloc): add deterministic CIDR allocator`
   - **Recommended task executor category:** `deep-low` (algorithmic, spec given).
 
 - [ ] 5. Client service with CAS loop, idempotency and child pools
+  - **Location:** the root package `ipam` (`client.go`, `pool.go`, `allocation.go`), using `internal/alloc` and `internal/document`.
   - **Constructor:** `ipam.New(store storage.Storage, opts ...Option) *Client`, with options `WithMaxAttempts(8)`, `WithBackoff(base 10ms, cap 250ms)`, `WithClock`, `WithRand`, `WithSleeper`, all injectable for tests.
   - **Methods** (all `context.Context` first):
     - `CreatePool(ctx, PoolSpec{ID, CIDRs | (ParentPool + Request), Description, Labels}) (Pool, error)`
@@ -309,7 +312,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Closes:** GAP-1, GAP-2, GAP-4
   - **Parallelization:** Wave 2 | Blocked by: 2,3,4 | Blocks: 9,10,13
   - **References:** draft D7, D9, D11; ultrabrain spec sections 3-5 and 7; research C1/C10 in `.omo/ulw-research/20261028-150017/claim-graph.md`.
-  - **Acceptance criteria:** `go test ./pkg/ipam -race -count=3` passes. Three runs prove there is no flakiness.
+  - **Acceptance criteria:** `go test . -race -count=3` passes (root package). Three runs prove there is no flakiness.
   - **QA scenarios:**
     - **Happy:** the 8-goroutine unique-key test passes with `-race`.
     - **Failure:** a permanent-412 store returns `errors.Is(err, ipam.ErrConflict)` after exactly 8 Put calls (asserted counter).
@@ -318,7 +321,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Recommended task executor category:** `deep-high` (correctness argued from concurrency invariants).
 
 - [ ] 6. Local filesystem backend
-  - **What to do:** `pkg/storage/local.New(dir string)`.
+  - **What to do:** `storage/local.New(dir string)`.
     - Object key maps to a file under `dir`, with `/` becoming nested dirs; reject keys containing `..`.
     - The version is the hex sha256 of the content.
     - Each conditional op holds an exclusive `flock` on `<dir>/.lock`, using `golang.org/x/sys/unix` on unix and `windows.LockFileEx` on Windows, behind a build-tagged helper.
@@ -330,7 +333,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Closes:** GAP-5
   - **Parallelization:** Wave 2 | Blocked by: 2 | Blocks: 9
   - **References:** draft D12; `storagetest` from todo 2.
-  - **Acceptance criteria:** `go test ./pkg/storage/local -race -count=1` passes, including `TestCrossProcess`.
+  - **Acceptance criteria:** `go test ./storage/local -race -count=1` passes, including `TestCrossProcess`.
   - **QA scenarios:**
     - **Happy:** the contract suite plus the cross-process counter equals 100.
     - **Failure:** key `../x` gives `ErrInvalidArgument`-style error; PutIfMatch with a stale sha gives `ErrPreconditionFailed`.
@@ -339,7 +342,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Recommended task executor category:** `unspecified-low` (contained backend, contract provided).
 
 - [ ] 7. S3 backend (aws-sdk-go-v2)
-  - **What to do:** `pkg/storage/s3.New(ctx, Config{Bucket, Prefix, Region, Endpoint, UsePathStyle})`.
+  - **What to do:** `storage/s3.New(ctx, Config{Bucket, Prefix, Region, Endpoint, UsePathStyle})`.
     - Load credentials with `config.LoadDefaultConfig`.
     - **Get:** `GetObject`, returning the ETag verbatim. NoSuchKey/404 gives `ErrNotFound`.
     - **CreateIfAbsent:** `PutObject` with `IfNoneMatch: aws.String("*")`.
@@ -364,8 +367,8 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
     - aws-sdk-go-v2 `service/s3` `PutObjectInput.IfMatch`, `IfNoneMatch`, `DeleteObjectInput.IfMatch`.
     - Draft D3, D8.
   - **Acceptance criteria:**
-    - `go test ./pkg/storage/s3 -count=1` passes; unit tests use an `httptest` server that asserts the headers.
-    - `IPAM_TEST_S3_ENDPOINT=http://127.0.0.1:9000 go test -tags integration ./pkg/storage/s3 -count=1` passes on the emulator that passed the probe.
+    - `go test ./storage/s3 -count=1` passes; unit tests use an `httptest` server that asserts the headers.
+    - `IPAM_TEST_S3_ENDPOINT=http://127.0.0.1:9000 go test -tags integration ./storage/s3 -count=1` passes on the emulator that passed the probe.
   - **QA scenarios:**
     - **Happy:** the integration contract suite is green.
     - **Failure:** the `httptest` server returns 412 and the backend returns `ErrPreconditionFailed`; a missing bucket gives a non-precondition error propagated unchanged.
@@ -374,7 +377,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Recommended task executor category:** `unspecified-high` (external API + emulator uncertainty).
 
 - [ ] 8. Azure Blob backend (azblob)
-  - **What to do:** `pkg/storage/azblob.New(ctx, Config{AccountURL, Container, Prefix})`.
+  - **What to do:** `storage/azblob.New(ctx, Config{AccountURL, Container, Prefix})`.
     - Credentials come from `azidentity.NewDefaultAzureCredential`. Use a connection string ONLY when env `AZURE_STORAGE_CONNECTION_STRING` is set (needed for Azurite).
     - **Get:** `DownloadStream`, ETag verbatim.
     - **CreateIfAbsent:** `UploadBuffer` with `AccessConditions.ModifiedAccessConditions.IfNoneMatch = to.Ptr(azcore.ETagAny)`.
@@ -392,7 +395,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Closes:** GAP-5
   - **Parallelization:** Wave 2 | Blocked by: 2 | Blocks: 9,17
   - **References:** draft D3, D8; https://raw.githubusercontent.com/Azure/azure-sdk-for-go/main/sdk/storage/azblob/CHANGELOG.md
-  - **Acceptance criteria:** `AZURE_STORAGE_CONNECTION_STRING=<azurite> go test -tags integration ./pkg/storage/azblob -count=1` passes, and `go test ./pkg/storage/azblob` (unit, no network) passes.
+  - **Acceptance criteria:** `AZURE_STORAGE_CONNECTION_STRING=<azurite> go test -tags integration ./storage/azblob -count=1` passes, and `go test ./storage/azblob` (unit, no network) passes.
   - **QA scenarios:**
     - **Happy:** the Azurite contract suite is green.
     - **Failure:** a stale ETag PUT against Azurite gives `ErrPreconditionFailed`, asserted in the suite and captured in the log.
@@ -400,8 +403,12 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Commit:** Y | `feat(storage): add Azure Blob backend with ETag conditions`
   - **Recommended task executor category:** `unspecified-high` (external SDK + emulator).
 
-- [ ] 9. Backend URL factory shared by CLI and provider
-  - **What to do:** `pkg/storage/config.Open(ctx, rawURL string) (storage.Storage, error)` and a struct form `Open(ctx, Config{...})`. Supported URLs:
+- [ ] 9. Root `ipam.Open` URL entrypoint shared by CLI and provider
+  - **What to do:** In the root package (`open.go`):
+    - `ipam.OpenStorage(ctx, rawURL string) (storage.Storage, error)`.
+    - `ipam.Open(ctx, rawURL string, opts ...Option) (*Client, error)`, which is `OpenStorage` followed by `New`.
+    - The root imports the backends. This is a one-way edge with no cycle, because backends import only `storage`.
+    - Supported URLs:
     - `s3://<bucket>/<prefix>?region=..&endpoint=..&path_style=true`
     - `azblob://<account>.blob.core.windows.net/<container>/<prefix>`, or `azblob://<container>/<prefix>` with `AZURE_STORAGE_CONNECTION_STRING`
     - `file:///abs/path`
@@ -412,12 +419,12 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Closes:** GAP-5, GAP-6
   - **Parallelization:** Wave 3 | Blocked by: 5,6,7,8 | Blocks: 10,13
   - **References:** draft D13; todos 6-8 constructors.
-  - **Acceptance criteria:** `go test ./pkg/storage/config -count=1` passes.
+  - **Acceptance criteria:** `go test . -run TestOpen -count=1` passes.
   - **QA scenarios:**
     - **Happy:** `file:///tmp/x` gives a local store.
     - **Failure:** `s3://user:pass@b/p` gives an error; `ftp://x` gives `ErrInvalidArgument`.
     - **Evidence:** `<attemptDir>/task-9-ipam-provider-design.txt`
-  - **Commit:** Y | `feat(storage): add URL-based backend factory`
+  - **Commit:** Y | `feat(ipam): add URL-based Open entrypoint`
   - **Recommended task executor category:** `quick` (parsing + table tests).
 
 - [ ] 10. `ipam` CLI (cobra)
@@ -468,7 +475,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Closes:** GAP-6, GAP-7
   - **Parallelization:** Wave 3 | Blocked by: 10 | Blocks: -
   - **References:** todos 2-10 public APIs; draft Decisions.
-  - **Acceptance criteria:** `go test ./... -run Example -count=1` passes, and the README mentions every exported constructor in `pkg/storage/*` (`grep` check script in evidence).
+  - **Acceptance criteria:** `go test ./... -run Example -count=1` passes, and the README mentions every exported constructor in `storage/*` (`grep` check script in evidence).
   - **QA scenarios:**
     - **Happy:** examples run.
     - **Failure:** every CLI command and flag in the README is cross-checked against `ipam --help` output; zero mismatches.
@@ -510,7 +517,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
     - `local = { path (req) }`
   - Validate with `objectvalidator.ExactlyOneOf` from `terraform-plugin-framework-validators`.
   - Env fallback `IPAM_BACKEND`, a URL in todo 9's format, used when no block is set.
-  - Configure builds `storage` via `pkg/storage/config`, then `ipam.New`, and passes `*ipam.Client` as `ResourceData`/`DataSourceData`.
+  - Configure builds the backend with its public typed constructor (`s3.New`, `azblob.New` or `local.New` from `github.com/appvia/ipam/storage/...`), or with `ipam.OpenStorage` for `IPAM_BACKEND`, then calls `ipam.New` and passes `*ipam.Client` as `ResourceData`/`DataSourceData`.
   - Unknown values at configure time are deferred with a clear diagnostic.
   - Add `internal/provider/errors.go`, mapping ipam typed errors to diagnostics: summary, plus detail with `Reason`.
   - **Unit tests:** schema validation (zero or two blocks are errors); env fallback.

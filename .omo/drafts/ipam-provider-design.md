@@ -57,7 +57,8 @@ Users: (U1) platform engineers writing Terraform that needs non-overlapping CIDR
 
 ## Decisions (with rationale)
 - D1 (user) Data model: pools (static CIDRs OR carved from parent_pool) + allocations. No scope/space concept; a root pool tree = collision domain.
-- D2 (user) Client repo github.com/appvia/ipam at /Volumes/code/ipam: pkg/ipam, pkg/storage/{s3,azblob,memory}, cmd/ipam cobra CLI built in this plan. Provider stays appvia/terraform-provider-ipam, registry appvia/ipam. User creates GitHub remote.
+- D2 (user) Client repo github.com/appvia/ipam at /Volumes/code/ipam, cobra CLI at cmd/ipam built in this plan.
+- D15 (user, 2026-10-28 "Drop the pkg prefix... root of the package can be the client entrypoint?") Layout: no pkg/. Module root package `ipam` = client entrypoint (New, Open, OpenStorage, public types, errors). `storage` + `storage/{memory,local,s3,azblob,storagetest}` stay PUBLIC (interface is in ipam.New signature; provider is a separate module and cannot import internal/). `internal/alloc` (pure netip allocator) and `internal/document` (v1 JSON codec) are internal. URL factory moved from storage/config to root `open.go`. Provider stays appvia/terraform-provider-ipam, registry appvia/ipam. User creates GitHub remote.
 - D3 (user) Backends now: S3 + Azure Blob + memory; integration via Azurite and MinIO/LocalStack (MinIO If-Match support to be verified as a task).
 - D4 (user) TDD for allocator + storage contract suite; provider acceptance tests on memory backend; licences MPL-2.0 provider, Apache-2.0 client.
 - D5 (default) Storage: one JSON object per pool tree? -> one object per pool, CAS via ETag If-Match; create via If-None-Match:*. Child pool creation = CAS on parent doc (allocation of kind pool) then create child doc.
