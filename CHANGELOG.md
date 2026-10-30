@@ -8,7 +8,12 @@ All notable changes to this project are documented here. The format follows
 
 ### Security
 
-- Update `google.golang.org/grpc` to v1.83.1, and `github.com/prometheus/prometheus` to v0.311.3 in the e2e tools module, to clear the open Dependabot alerts.
+- Update `google.golang.org/grpc` (now v1.85.0), `golang.org/x/net` and, in the e2e tools module, `github.com/prometheus/prometheus` (now v0.315.1). This clears the open Dependabot alerts and the reachable gRPC finding from `govulncheck`.
+
+### Changed
+
+- Update all dependencies in the provider and the e2e tools module to their latest versions.
+- Require Go 1.27.3.
 
 ## [0.1.0] - 2026-10-30
 
