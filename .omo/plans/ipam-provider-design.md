@@ -158,7 +158,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
 ## Todos
 > Implementation + Test = ONE todo. Never separate.
 <!-- APPEND TASK BATCHES BELOW THIS LINE WITH edit/apply_patch - never rewrite the headers above. -->
-- [ ] 1. Scaffold client repo github.com/appvia/ipam
+- [x] 1. Scaffold client repo github.com/appvia/ipam
   - **What to do:**
     - `mkdir /Volumes/code/ipam && git init`.
     - Create `go.mod` (`module github.com/appvia/ipam`, `go 1.25` minimum, toolchain as local `go1.27.3` allows).
@@ -189,7 +189,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Commit:** Y | `chore: scaffold ipam client repository`
   - **Recommended task executor category:** `quick` (mechanical scaffolding from a sibling repo).
 
-- [ ] 2. Storage interface, errors, memory backend, contract suite
+- [x] 2. Storage interface, errors, memory backend, contract suite
   - **What to do (TDD):** In `storage/storage.go` define:
     ```go
     type Version string // opaque ETag, round-tripped unchanged
@@ -239,11 +239,18 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Commit:** Y | `feat(storage): add storage interface, memory backend and contract suite`
   - **Recommended task executor category:** `deep-low` (concurrency contract correctness).
 
-- [ ] 3. Domain model, canonicalisation and JSON schema v1 (pool and reservations documents)
+- [x] 2a. Contract suite follow-up: successful delete case and parallel-key note (follow-up from todo 2 verification)
+  - **What to do:** in `/Volumes/code/ipam/storage/storagetest/contract.go` add a contract case: `DeleteIfMatch` with the CURRENT version succeeds, a following `Get` returns `ErrNotFound`, and a second `CreateIfAbsent` on the same key succeeds with a version different from the deleted one. Add the `// keys, sorted` comment on `Storage.List` in `storage/storage.go`. Document on `storagetest.Run` that subtests run in parallel with fixed keys, so `newStore` must return an isolated store (own prefix or container) per call.
+  - **Must NOT do:** no change to the interface signatures, errors or memory backend behaviour.
+  - **Acceptance criteria:** `go test ./storage/... -race -count=1` passes; a scratch-copy mutation where `DeleteIfMatch` succeeds without deleting makes the contract fail.
+  - **Blocked by:** 2 | **Blocks:** 6,7,8 (they run this suite)
+  - **Recommended task executor category:** `quick`
+
+- [x] 3. Domain model, canonicalisation and JSON schema v1 (pool and reservations documents)
   - **What to do (TDD):** Public types live in the root package `ipam` (`types.go`, `canonical.go`). The JSON codecs live in `internal/document`, which defines its own v1 structs and must NOT import the root package (no import cycle). The root package converts between public types and documents.
     - **Types:** `Pool{ID, Family(4|6), CIDRs []netip.Prefix, Parent *ParentRef{PoolID, AllocationID}, Description, Labels map[string]string}`, `Allocation{ID, PoolID, Request Request, CIDR netip.Prefix, Description, Labels, CreatedAt time.Time}`, and `Request{Kind:"next"|"explicit", PrefixLength int, CIDR netip.Prefix}`.
     - **Pool ID:** regex `^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`.
-    - **Allocation ID:** either a canonical lowercase UUID (any version accepted on input; generated IDs are UUIDv7 via `github.com/google/uuid` `NewV7`) or the reserved form `pool:<pool_id>` used only for child-pool carve-outs. Anything else is `ErrInvalidArgument`.
+    - **Allocation ID:** either a canonical lowercase UUID (any version accepted on input; generated IDs are UUIDv7 via `github.com/google/uuid` `NewV7`) or the reserved form `pool:<pool_id>:<32 lowercase hex incarnation>` used only for child-pool carve-outs (amended by the todo 5 attempt-2 decisions: keying the carve-out by the child's incarnation makes stale deletes harmless; the bare `pool:<pool_id>` form is no longer valid). Anything else is `ErrInvalidArgument`.
     - **Canonicalisation:**
       - Use `netip.ParsePrefix` and store `Masked()`.
       - Reject zones.
@@ -276,7 +283,14 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Commit:** Y | `feat(ipam): add pool and reservations models with v1 document codecs`
   - **Recommended task executor category:** `deep-low` (exact invariants).
 
-- [ ] 4. Pure CIDR allocator (next-available and explicit)
+- [x] 3a. Restore document-layer test coverage lost in todo 3 cleanup (follow-up from todo 3 verification)
+  - **What to do:** in `/Volumes/code/ipam/document_test.go` (root package) add: (a) a case that a malformed document read through the root package (truncated JSON, wrong kind, mismatched pool_id) returns an error satisfying `errors.Is(err, ipam.ErrInvalidArgument)` (fails if the root `mapDocumentError` mapping of the document-package invalid-document sentinel to `ErrInvalidArgument` is removed); (b) a generated UUIDv7 allocation ID round-trips through the reservations encoder and decoder unchanged.
+  - **Must NOT do:** no production code change; no change to goldens.
+  - **Acceptance criteria:** `go test . ./internal/document -race -count=1` passes; a scratch-copy mutation of `mapDocumentError` (map to ErrInvalidCIDR) makes the new case fail.
+  - **Blocked by:** 3 | **Blocks:** 5
+  - **Recommended task executor category:** `quick`
+
+- [x] 4. Pure CIDR allocator (next-available and explicit)
   - **What to do (TDD):** Write `internal/alloc/alloc.go` as pure functions over `netip` types only, with no I/O and no import of the root package. Signatures: `Next(parents, used []netip.Prefix, length int) (netip.Prefix, error)` and `CheckExplicit(parents, used []netip.Prefix, cidr netip.Prefix) error`. It returns `alloc.ErrInvalidCIDR`, `alloc.ErrExhausted` and `alloc.ErrOverlap`, which the root package maps to `ipam.ErrInvalidCIDR`, `ipam.ErrPoolExhausted` and `ipam.ErrConflict` (Reason `overlap`).
     - **`Next`:**
       - `length` must be within the family's width and `>=` the bits of at least one parent CIDR, otherwise `ErrInvalidCIDR`.
@@ -305,7 +319,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Commit:** Y | `feat(alloc): add deterministic CIDR allocator`
   - **Recommended task executor category:** `deep-low` (algorithmic, spec given).
 
-- [ ] 5. Client service with CAS loop, generated IDs, split documents and child pools
+- [x] 5. Client service with CAS loop, generated IDs, split documents and child pools
   - **Location:** the root package `ipam` (`client.go`, `pool.go`, `allocation.go`), using `internal/alloc` and `internal/document`.
   - **Constructor:** `ipam.New(store storage.Storage, opts ...Option) *Client`, with options `WithMaxAttempts(8)` (0 = until deadline), `WithBackoff(base 10ms, cap 250ms)`, `WithClock`, `WithRand`, `WithSleeper`, `WithIDGenerator`, all injectable for tests.
   - **Exported helper:** `ipam.NewAllocationID() string` (UUIDv7, canonical lowercase). The provider calls it once at the start of Create.
@@ -378,10 +392,33 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
     - **Happy:** the 8-goroutine test passes with `-race`.
     - **Failure:** a permanent-412 store returns `errors.Is(err, ipam.ErrConflict)` after exactly 8 Put calls (asserted counter); `Allocate` on a pool with no reservations document returns `ErrNotFound` and writes nothing.
     - **Evidence:** `<attemptDir>/task-5-ipam-provider-design.txt`
+  - **Orchestrator decisions (post-verification, attempt 1)** - these AMEND the bullets above where they conflict; found by the independent verifier's fault-injection stress run (overlap between parent and child; deadlocks; a pool wedged after a crash; an orphaned carve-out):
+    - **No orphan scan in DeletePool.** DeletePool never scans other pools' reservations to release `pool:<id>` carve-outs. A scan cannot tell an abandoned carve-out from a concurrent CreatePool that has written step 1 but not yet steps 2-3, and releasing it lets the parent hand the same space out again (overlap, violates IS-1). DeletePool on a pool whose pool document is missing returns ErrNotFound unless its reservations document exists (half-deleted: then finish the delete steps). An abandoned carve-out (crash between CreatePool step 1 and step 3) is safe (never overlaps) and is recovered by retrying the SAME CreatePool, which is idempotent; document this in the package docs and the CreatePool doc comment.
+    - **Pool document is the source of truth for the incarnation.** CreatePool first reads the pool document. If it exists with an identical spec: adopt its incarnation, create the reservations document if it is missing (with that incarnation) and return the pool; a different spec: ErrConflict pool_exists with NO writes (and, for a child pool, before allocating any carve-out in a new parent). If it is absent: generate a fresh incarnation, create the reservations document (adopt an existing EMPTY orphan reservations document's incarnation; a non-empty one: pool_exists), then create the pool document with the same incarnation. This makes DeletePool crashes after step 3 (reservations deleted, pool document kept) recoverable by recreating the same pool, and a different-spec recreate fails cleanly.
+    - **Child creation conflict rollback.** CreatePool with a parent that loses at step 3 (pool_exists because the child already exists with a different parent or spec) must release the carve-out it newly created in ITS parent (only if this call created it, never one that pre-existed). The existence pre-check above removes the common case; the rollback covers the concurrent-creators race.
+    - **No nested locks, cancellable locks, no cycles.** Never hold the child's pool lock while taking the parent's: take the parent lock only around the parent Allocate/Release, release it, then take the child lock for the child's own steps (no lock ordering problem remains). Per-pool locks must honour ctx cancellation (e.g. a buffered-channel semaphore with select on ctx.Done()), so a blocked caller returns ctx.Err(). Reject a pool that names itself as parent (ErrInvalidArgument) up front; a longer cycle cannot form because a parent must already exist before a child is created, but add a test proving CreatePool(a, parent=b) racing CreatePool(b, parent=a) terminates (both may fail ErrNotFound) and never hangs.
+    - **Test fixtures:** test clients must NOT share one fixed incarnation: give each Client its own WithRand stream so incarnation adoption and the ABA fence are exercised for real; keep the explicit negative control that neutralises the token. Port the verifier's probes (/Volumes/code/terraform-provider-ipam/.omo/evidence/task-5-gate-probes/gate_probe_test.go and gate_stress_test.go) into the real test files as regression tests (child-vs-delete overlap, self-parent, mutual-parent, half-deleted-then-create, child-create-conflict, model-based stress with fault injection incl. ErrUnknownOutcome before and after commit), plus tests for the surviving mutants: full jitter and backoff cap bounds (deterministic via WithRand/WithSleeper), default sleeper honours ctx, cancellation is not swallowed, unknown-outcome with an existing ID but a DIFFERENT request is not accepted as success, incarnation adoption, DeletePool half-delete convergence.
+  - **Orchestrator decisions (post-verification, attempt 2)** - these SUPERSEDE the attempt-1 decisions wherever they conflict. Attempt 2 added 'creating'/'deleting' lifecycle markers on the pool document (written by the root package outside internal/document); the second independent verification found six blockers rooted in that protocol (a stale DeletePool releasing a recreated child's carve-out after passing a read-then-CAS claim check = overlap; invariants only holding with shared per-Client mutexes; undocumented second author of the v1 format; one crashed create breaking ListPools; cancellation misreported as a conflict). Cross-document atomicity cannot be recovered by guarding after the fact, so the markers are REMOVED and replaced by this design:
+    - **No lifecycle markers, no claim checks, no parent-carve verification.** Delete the Creating/Deleting fields, the raw-JSON splice in root document.go, and every check that reads child state then CASes the parent. The pool document schema is exactly the v1 schema of todo 3 (internal/document remains the only author of the stored format).
+    - **Child carve-outs are keyed by the child's incarnation.** The carve-out allocation in the parent's reservations document has ID `pool:<child_pool_id>:<incarnation>` (incarnation = the 32-hex token of the child pool being created), recorded verbatim as `parent.allocation_id` in the child's pool document. A stale operation that still holds an OLD incarnation can therefore only ever release or re-claim ITS OWN carve-out; it can never touch the carve-out of a recreated child (which has a different incarnation). This removes the TOCTOU by construction: no cross-document check is needed. Update todo 3's reserved allocation-ID form accordingly: `pool:<pool_id>:<32 lowercase hex>` (validate the pool id part with the pool-ID regex and the suffix as exactly 32 lowercase hex chars; the old bare `pool:<pool_id>` form is no longer valid); update the golden files (pool_v1.json parent.allocation_id and any pool: entry in reservations_v1.json) and the canonical/codec tests; user-supplied IDs beginning with `pool:` remain ErrInvalidArgument for Allocate.
+    - **CreatePool with parent** (incarnation chosen once at the start of the call, or adopted from an existing identical-spec pool document as in the attempt-1 algorithm): (1) read the child pool document; identical spec -> adopt its incarnation and continue from the first missing step; different spec -> pool_exists with NO writes; absent -> generate a fresh incarnation A. (2) Allocate(parent, ID `pool:<child>:A`) (idempotent by ID: retries inside one call, and retries by a caller that adopted A, are safe). (3) CreateIfAbsent child reservations (empty, incarnation A). (4) CreateIfAbsent child pool document (incarnation A, parent.allocation_id = the carve-out ID, CIDRs = the carved prefix). A crash between (2) and (4) leaves an abandoned carve-out `pool:<child>:A`: safe (never overlaps), and a retry of the same CreatePool starts with a fresh incarnation (nothing adopted since no pool document exists) and leaves the old one orphaned; document this leak honestly in the package docs and CreatePool doc comment. If creating the pool document loses to a concurrent creator (pool_exists), release only the carve-out this call created (its own incarnation-keyed ID: safe by construction).
+    - **DeletePool order (changed)**: (1) read the pool document (keep parent ref and incarnation A) -> ErrNotFound if absent and no reservations document; (2) read reservations: allocations present -> ErrConflict pool_not_empty; (3) DeleteIfMatch the child reservations document (retry from (1) on precondition failure; tolerate missing); (4) DeleteIfMatch the pool document (version read in (1)); (5) release the parent carve-out `pool:<child>:A` (idempotent; tolerate missing parent). Rationale: after (3) the child is unusable (Allocate on a missing reservations document is ErrNotFound and never creates one) while its carve-out is still held, so a crash after (3) or (4) never lets the parent re-hand-out space a live child still uses; a retry of the same DeletePool finishes, and recreating the same pool after a crash at (3) adopts incarnation A (pool document still present) and recreates its reservations with the carve-out still held. A crash after (4) before (5) leaks the carve-out (safe). There is NO orphan scan anywhere.
+    - **Recovery of leaked carve-outs**: Release(parent, id) accepts `pool:<child>:<inc>` IDs ONLY when no pool document `pools/<child>.json` exists with that incarnation (otherwise ErrConflict pool_in_use); document it as an operator action (`ipam allocation release --pool <parent> --id pool:<child>:<inc>`) in the package docs.
+    - **Cancellation and error fidelity**: any error reading the parent or child documents (context cancellation, ErrAccessDenied, transient ErrPreconditionFailed/incarnation_mismatch) is returned/retried per the CAS retry rules and NEVER converted into a conflict; only a genuinely absent document is ErrNotFound.
+    - **Correctness from CAS, not from in-process locks**: the per-pool in-process mutex is an optimisation only. Every test of concurrency invariants must give each concurrent worker its OWN Client (own mutexes, own WithRand stream) on the shared store; the model-based checker must pass with that topology and with the mutex disabled (a test-only option or build of the Client that skips the lock).
+    - **Test fixes**: replace TestCreatePoolMutualParentsNeverDeadlock's TryLock busy-wait by a deterministic test (concurrent CreatePool(a,parent=b)/CreatePool(b,parent=a) with a bounded timeout and no spinning on lock internals; both may fail ErrNotFound); the jitter test must use a random source whose outputs are NOT equal to the limits so it distinguishes full jitter from a fixed delay (assert bounds and that different random values produce different sleeps); add tests that kill the surviving mutants: swallowed cancellation, parent-read error fidelity (cancellation/access-denied during the parent read surface unchanged), revive-on-conflict path, and the claim-by-incarnation property (a stale DeletePool holding incarnation A cannot release the carve-out of the recreated child with incarnation B: port the verifier's TestGate2ClaimCheckTOCTOU scenario).
+  - **Orchestrator decisions (post-verification, attempt 3)** - authorised by the user as attempt 4 after the third failed verification; these SUPERSEDE the 'adopt' clauses of the attempt-1 and attempt-2 decisions (adoption of an existing pool document's or an empty reservations document's incarnation is REMOVED). Everything else in the attempt-2 design stands (incarnation-keyed carve-outs `pool:<child>:<incarnation>`, no markers, no claim checks, no orphan scan, DeletePool order reservations -> pool document -> carve-out, per-worker Clients in concurrency tests, error/cancellation fidelity). The two remaining defects found by the independent verifier (R3-B1: a stale CreatePool/ensureReservations recreates reservations/<c>.json with the deleted pool's incarnation A, a stale Allocate commits into it and the parent re-hands out the space = overlap; R3-B2: two creators with different specs, the loser rewrites the winner's empty reservations document to its own incarnation, so every Allocate fails permanently) share one root cause: a creator adopting or rewriting an incarnation it did not generate in this very call. New rules:
+    - **An incarnation is only ever written by the call that generated it, and only with CreateIfAbsent.** CreatePool ALWAYS generates a fresh incarnation (32 random hex chars) and NEVER adopts one from an existing pool document or reservations document and NEVER rewrites an existing reservations document (no PutIfMatch on a reservations document on the create path). Consequently a deleted pool's incarnation can never be resurrected by a stale operation, and a loser of a create race can never touch the winner's documents.
+    - **CreatePool algorithm (root pool)**: (1) read the pool document and the reservations document. (2) If the pool document exists: identical spec AND reservations document exists with the SAME incarnation -> return the existing pool with ZERO writes (idempotent success; this is the 'retry after a completed first call' case); different spec -> ErrConflict pool_exists with zero writes; identical spec but reservations missing or with a different incarnation -> state 'incomplete'. (3) If the pool document is absent but a reservations document exists -> state 'incomplete'. 'Incomplete' is handled INSIDE the normal CAS retry loop: back off (the injected sleeper), re-read, and succeed if it has meanwhile become a complete identical pool (this covers N concurrent creators of the same spec and a legitimately in-flight creator), otherwise after the attempt bound return ErrConflict with Reason `pool_incomplete` and NO writes; the message tells the operator to run DeletePool to clear it and retry. (4) If both are absent: generate a fresh incarnation A; CreateIfAbsent reservations(A, empty); if that loses (exists) -> loop back to step 1 (state 'incomplete' or complete); then CreateIfAbsent pool document(A) LAST (it is the publication point); if that loses -> the pool now exists from someone else: leave the reservations document alone ONLY if it is not ours: since ours was created by CreateIfAbsent with A, delete it with DeleteIfMatch(version we got) (tolerate not-found/precondition failure) and loop back to step 1. (5) POST-CHECK: after publishing the pool document, re-read the reservations document; if it is missing or its incarnation is not A (a cleaner deleted our in-flight residue) -> abort: DeleteIfMatch our pool document (version we got), release our own carve-out if any (incarnation-keyed ID: safe), and return a retryable ErrConflict (Reason `pool_create_raced`) or loop to step 1 within the attempt bound. A pool is only usable when BOTH documents exist with the same incarnation; Allocate/GetPool/Release must treat a pool document without a matching reservations document as 'not usable' (Allocate -> ErrNotFound with zero writes; it never creates documents).
+    - **CreatePool with parent**: the same algorithm, with the carve-out step added exactly as in the attempt-2 design but ordered: after generating A in step (4): Allocate(parent, `pool:<child>:A`) FIRST (idempotent by ID), then reservations(A), then the pool document(A) LAST with parent.allocation_id = the carve-out ID; on any abort or lost race after the carve-out exists, release the carve-out THIS call created (own incarnation-keyed ID). Existing-pool pre-check in step (2) happens before any carve-out is allocated (different spec -> pool_exists with zero writes and NO carve-out).
+    - **DeletePool cleans every residue shape** (it is the only recovery path): (a) pool document + reservations (complete): the attempt-2 order (check reservations empty, delete reservations with DeleteIfMatch, delete pool document with DeleteIfMatch, release carve-out). (b) pool document without reservations (crash after the reservations delete, or an aborted create): delete the pool document (DeleteIfMatch with the version read), release its carve-out (parent.allocation_id), tolerate missing. (c) reservations document without a pool document: if it is empty, DeleteIfMatch it (version read; tolerate precondition failure and re-read); if non-empty -> ErrConflict pool_not_empty (never delete allocations). If nothing exists -> ErrNotFound. Residue shape (c) belongs to either a crashed create or an in-flight creator: the in-flight creator's POST-CHECK (step 5) makes deleting it safe.
+    - **Stale operations are harmless by construction**: Allocate/UpdateAllocationMetadata/Release read pool document + reservations document (same incarnation required) and commit by PutIfMatch on the reservations document; since no code path ever (re)creates a reservations document with an old incarnation, a stale commit after a delete can only fail (412/404) and re-read.
+    - **Tests to add** (use per-worker Clients, no shared mutexes): port the verifier's round-3 probes as regression tests: /Volumes/code/terraform-provider-ipam/.omo/evidence/task-5-gate-probes-r3/ (gate3_probe_test.go: TestGate3StaleCreateAndAllocateAfterDelete, TestGate3DifferentSpecCreateRaceWedgesAllocate, TestGate3OperatorReleaseVsInflightCreate and the TestGateCreateRaceLocal loop at >=200 iterations on the local backend), plus: 8 concurrent CreatePool same spec all return the same pool (no pool_incomplete), different specs: exactly one winner and every loser gets pool_exists/pool_incomplete without having written anything, and the winner's pool is allocatable; crash after each create step (reservations, carve-out, pool document, post-check) then a healthy CreatePool: returns pool_incomplete within the attempt bound and a subsequent DeletePool + CreatePool succeeds; every residue shape (a)(b)(c) cleaned by DeletePool; creator whose in-flight reservations is deleted by a cleaner aborts (post-check) and leaves no pool document; the model-based stress (>=400 six-client memory seeds, 60 local seeds, fresh seed offset) with the extra invariant that a healthy client can ALWAYS either create, delete or allocate in every pool (no permanently unusable pool) and that every usable pool has both documents with equal incarnation; mutants must die: adopting an incarnation, PutIfMatch-rewriting reservations on the create path, skipping the post-check, skipping the existing-pool pre-check, releasing a carve-out by a non-own ID.
+    - **Document the operator caveat**: releasing a leaked carve-out (`ipam allocation release --pool <parent> --id pool:<child>:<inc>`) is only safe when no CreatePool for that child can still be running (the pool_in_use check cannot see an in-flight creator); put this warning in the package docs, the Release doc comment and the CLI help later. Remove the dead `allowChildID` parameter of release.
   - **Commit:** Y | `feat(ipam): add client service with optimistic concurrency, generated IDs and child pools`
   - **Recommended task executor category:** `deep-high` (correctness argued from concurrency invariants).
 
-- [ ] 6. Local filesystem backend
+- [x] 6. Local filesystem backend
   - **What to do:** `storage/local.New(dir string)`.
     - Object key maps to a file under `dir`, with `/` becoming nested dirs; reject keys containing `..`.
     - The version is the hex sha256 of the content.
@@ -402,7 +439,14 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Commit:** Y | `feat(storage): add local filesystem backend`
   - **Recommended task executor category:** `unspecified-low` (contained backend, contract provided).
 
-- [ ] 7. S3 backend (aws-sdk-go-v2)
+- [x] 6a. Local backend lock follow-ups (follow-up from todo 6 verification)
+  - **What to do:** in `/Volumes/code/ipam/storage/local/**` only: (a) reword the false code comment 'two holders can never lock different inodes' in the lock code to state the real guarantee (the backend never deletes `.lock`; external deletion of `.lock` while held can let two holders lock different inodes, which the SameFile re-check narrows but cannot fully close) and add the same note to the package doc as a limitation; (b) add a test that exercises the SameFile re-check path (a `.lock` replaced between open and flock is detected and retried, not silently used), failing if the check is removed; (c) when acquire() gives up after SameFile failures the error must not end in ': <nil>'; (d) New must close the directory handle when acquiring the lock fails (add a test using a directory where .lock cannot be created, or at least cover the error path).
+  - **Must NOT do:** no behaviour change to the happy path, no change to the Storage contract.
+  - **Acceptance criteria:** `go test ./storage/local -race -count=1` passes; removing the SameFile check in a scratch copy makes the new test fail; vet, lint, gofmt, windows vet + test -c clean.
+  - **Blocked by:** 6 | **Blocks:** 9
+  - **Recommended task executor category:** `quick`
+
+- [x] 7. S3 backend (aws-sdk-go-v2)
   - **What to do:** `storage/s3.New(ctx, Config{Bucket, Prefix, Region, Endpoint, UsePathStyle})`.
     - Load credentials with `config.LoadDefaultConfig` (with an explicit region, so no IMDS call happens at construction).
     - When `Endpoint` is set (S3-compatible emulators), set `RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired` and `ResponseChecksumValidation = aws.ResponseChecksumValidationWhenRequired`.
@@ -442,7 +486,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Commit:** Y | `feat(storage): add S3 backend with conditional writes`
   - **Recommended task executor category:** `unspecified-high` (external API + emulator uncertainty).
 
-- [ ] 8. Azure Blob backend (azblob)
+- [x] 8. Azure Blob backend (azblob)
   - **What to do:** `storage/azblob.New(ctx, Config{AccountURL, Container, Prefix})`.
     - `Config` takes `Credential azcore.TokenCredential` (required unless the Azurite connection string is used).
     - **Single auth mapping (`storage/azblob/auth.go`):** exported `type AuthConfig struct` with one field per azapi auth attribute (`TenantID`, `ClientID`, `ClientIDFilePath`, `ClientSecret`, `ClientSecretFilePath`, `ClientCertificate`, `ClientCertificatePath`, `ClientCertificatePassword`, `OIDCToken`, `OIDCTokenFilePath`, `OIDCRequestToken`, `OIDCRequestURL`, `OIDCAzureServiceConnectionID`, `UseOIDC`, `UseMSI`, `UseCLI`, `UseAKSWorkloadIdentity`), plus:
@@ -487,7 +531,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Commit:** Y | `feat(storage): add Azure Blob backend with ETag conditions`
   - **Recommended task executor category:** `unspecified-high` (external SDK + emulator).
 
-- [ ] 9. Root `ipam.Open` URL entrypoint shared by CLI and provider
+- [x] 9. Root `ipam.Open` URL entrypoint shared by CLI and provider
   - **What to do:** In the root package (`open.go`):
     - `ipam.OpenStorage(ctx, rawURL string) (storage.Storage, error)`.
     - `ipam.Open(ctx, rawURL string, opts ...Option) (*Client, error)`, which is `OpenStorage` followed by `New`.
@@ -511,7 +555,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Commit:** Y | `feat(ipam): add URL-based Open entrypoint`
   - **Recommended task executor category:** `quick` (parsing + table tests).
 
-- [ ] 10. `ipam` CLI (cobra)
+- [x] 10. `ipam` CLI (cobra)
   - **What to do:** `cmd/ipam`, using `github.com/spf13/cobra`.
     - Global `--backend` flag (env `IPAM_BACKEND`, required) and `-o json|table` (default table).
     - **Commands:**
@@ -545,7 +589,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Commit:** Y | `feat(cli): add ipam command line interface`
   - **Recommended task executor category:** `unspecified-low` (thin CLI over library).
 
-- [ ] 11. Client library documentation and examples
+- [x] 11. Client library documentation and examples
   - **What to do:**
     - Complete `README.md`:
       - Concepts: pool, parent pool, allocation, generated allocation IDs and idempotency by ID, explicit CIDR as reservation.
@@ -571,7 +615,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Commit:** Y | `docs: document concepts, storage backends and CLI`
   - **Recommended task executor category:** `writing` (docs).
 
-- [ ] 12. Scaffold Terraform provider repo
+- [x] 12. Scaffold Terraform provider repo
   - **What to do,** in `/Volumes/code/terraform-provider-ipam` (keep `.omo/`, `.codegraph/`, `.gitignore`):
     - `go.mod` (`module github.com/appvia/terraform-provider-ipam`).
     - `main.go` serving `providerserver.NewProtocol6WithError`, address `registry.terraform.io/appvia/ipam`, with a `version` ldflag.
@@ -598,7 +642,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Commit:** Y | `chore: scaffold terraform provider`
   - **Recommended task executor category:** `quick` (sibling-repo scaffolding).
 
-- [ ] 13. Provider configuration and client wiring
+- [x] 13. Provider configuration and client wiring
   - **What to do:** In `internal/provider/provider.go`, the schema has exactly one of three single nested attributes:
     - `s3 = { bucket (req), prefix, region, endpoint, use_path_style }`
     - `azure_blob = { account_url | (use_connection_string_env bool), container (req), prefix, tenant_id, client_id, client_id_file_path, client_secret (Sensitive), client_secret_file_path, client_certificate (Sensitive), client_certificate_path, client_certificate_password (Sensitive), oidc_token (Sensitive), oidc_token_file_path, oidc_request_token (Sensitive), oidc_request_url, oidc_azure_service_connection_id, use_oidc, use_msi, use_cli, use_aks_workload_identity }`. Names and `ARM_*` env fallbacks match the azapi provider exactly. Build the credential with `azblob.AuthConfigFromEnv().Merge(<attributes as AuthConfig>).Credential(...)` (task 8) and pass it to `azblob.New`; the provider never touches `aztfauth.Option` directly.
@@ -627,7 +671,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Commit:** Y | `feat(provider): add backend configuration`
   - **Recommended task executor category:** `unspecified-low` (framework boilerplate with validators).
 
-- [ ] 14. `ipam_pool` resource and data source
+- [x] 14. `ipam_pool` resource and data source
   - **Resource attributes:**
     - `id` (Required, the pool id, RequiresReplace)
     - `cidrs` (Optional+Computed set of string, RequiresReplace). Configured for a root pool; computed (the single carved CIDR) for a child.
@@ -667,7 +711,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Commit:** Y | `feat(provider): add ipam_pool resource and data source`
   - **Recommended task executor category:** `unspecified-high` (framework semantics + acceptance tests).
 
-- [ ] 15. `ipam_allocation` resource and data source (ID generated in Create)
+- [x] 15. `ipam_allocation` resource and data source (ID generated in Create)
   - **Resource attributes:**
     - `id` (Computed, `UseStateForUnknown`): the allocation's UUIDv7; unknown at plan time for new resources
     - `pool` (Required, RequiresReplace)
@@ -712,7 +756,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Commit:** Y | `feat(provider): add ipam_allocation resource and data source`
   - **Recommended task executor category:** `unspecified-high` (core resource + concurrency acceptance).
 
-- [ ] 16. Provider docs and examples
+- [x] 16. Provider docs and examples
   - **What to do:**
     - Add `examples/provider/provider.tf`, with one example per backend.
     - Add `examples/resources/ipam_pool/{resource.tf,import.sh}` and `examples/resources/ipam_allocation/{resource.tf,import.sh}`.
@@ -744,7 +788,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Commit:** Y | `docs: add provider documentation and examples`
   - **Recommended task executor category:** `writing` (docs generation).
 
-- [ ] 17. Cross-repo end-to-end with real CLI and emulators
+- [x] 17. Cross-repo end-to-end with real CLI and emulators
   - **What to do:** Add `scripts/e2e.sh` (with `set -euo pipefail`) in the provider repo. It must:
     1. Build the provider binary and write a `dev_overrides` CLI config (`TF_CLI_CONFIG_FILE`).
     2. Build the `ipam` CLI from `../ipam`.
@@ -774,7 +818,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Commit:** Y | `test: add cross-repo end-to-end script`
   - **Recommended task executor category:** `unspecified-high` (multi-process orchestration).
 
-- [ ] 18. Provisioning module terraform-azurerm-ipam (storage + access control)
+- [x] 18. Provisioning module terraform-azurerm-ipam (storage + access control)
   - **What to do:** Create `/Volumes/code/terraform-azurerm-ipam` by copying `/Volumes/code/terraform-azurerm-module-template` (Makefile, `.tflint.hcl`, `.terraform-docs.yml`, `.checkov.yml`, `.pre-commit-config.yaml`, `.github/workflows`, `LICENSE`, `test/`, `examples/basic`), `git init`, and replace the module body.
     - **Inputs:** `resource_group_name`, `location`, `storage_account_name`, `environment_role` (`"custom"` | `"builtin"`, default `"custom"`, validated), `container_name` (default `"ipam"`), `platform_principal_ids` (list), `environments` (`map(object({ pool_ids = list(string), principal_ids = list(string) }))`), `reader_principal_ids` (optional list), `soft_delete_retention_days` (default 30), `tags`.
     - **Storage account (`azurerm_storage_account`):** `is_hns_enabled = false`, `min_tls_version = "TLS1_2"`, `shared_access_key_enabled = false`, `allow_nested_items_to_be_public = false`, `blob_properties { versioning_enabled = true, delete_retention_policy { days = var.soft_delete_retention_days }, container_delete_retention_policy { days = var.soft_delete_retention_days } }`.
@@ -813,7 +857,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Commit:** Y | `feat: add ipam storage and access control module for Azure`
   - **Recommended task executor category:** `unspecified-high` (Azure RBAC/ABAC correctness).
 
-- [ ] 19. Provisioning module terraform-aws-ipam (storage + access control)
+- [x] 19. Provisioning module terraform-aws-ipam (storage + access control)
   - **What to do:** Create `/Volumes/code/terraform-aws-ipam` with the same repo tooling as task 18 (copied from `/Volumes/code/terraform-azurerm-module-template`, with the provider swapped to `hashicorp/aws`), `git init`.
     - **Inputs:** `bucket_name`, `region` (required; used for `provider_config` and `backend_url` so outputs are known at plan time), `platform_role_names` (list), `environments` (`map(object({ pool_ids = list(string), role_names = list(string) }))`), `reader_role_names` (optional), `kms_key_arn` (optional; default SSE-S3), `noncurrent_version_expiration_days` (default 30), `tags`.
     - **Bucket:** `aws_s3_bucket`, `aws_s3_bucket_versioning` (Enabled), `aws_s3_bucket_public_access_block` (all true), `aws_s3_bucket_ownership_controls` (BucketOwnerEnforced), `aws_s3_bucket_server_side_encryption_configuration`, a lifecycle rule expiring noncurrent versions after N days, and a bucket policy denying `aws:SecureTransport = false`.
@@ -850,7 +894,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Commit:** Y | `feat: add ipam storage and access control module for AWS`
   - **Recommended task executor category:** `unspecified-high` (IAM policy correctness).
 
-- [ ] 20. `ipam doctor` read-only backend check
+- [x] 20. `ipam doctor` read-only backend check
   - **What to do:**
     - **`storage` additions:**
       - Uses `storage.ErrAccessDenied` (task 2; mapped by tasks 6-8; local maps `fs.ErrPermission`). Doctor never sets the access-propagation flag, so denied probes fail fast.
@@ -883,7 +927,26 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
   - **Commit:** Y | `feat(cli): add read-only doctor command`
   - **Recommended task executor category:** `unspecified-high` (cross-backend probes, non-mutating guarantee).
 
-- [ ] 21. Emulator preflight (Wave 1)
+- [x] 21a. Emulator stop script robustness (follow-up from todo 8 execution)
+  - **What to do:** in `/Volumes/code/ipam/scripts/emulators/` only: `stop.sh` can exit 1 ('azurite (pid N) still running after 30s') because the npm exec wrapper (and its node child) outlives the single SIGTERM even though the emulator port is already closed. Make teardown reliable: signal the whole process group / tree (the wrapper, npm, node child, and the MinIO process), wait a bounded time for each, then escalate to SIGKILL after the deadline, and exit 0 only when every recorded pid is gone and the ports are free (exit non-zero with a clear message otherwise). Also make a second invocation (nothing running) exit 0, and make `start-azurite.sh` record every pid it needs to stop (wrapper and children) in the state dir.
+  - **Must NOT do:** do not change the probe or its exit semantics; do not kill processes the scripts did not start (only pids recorded in the state dir); no Docker.
+  - **Acceptance criteria:** start Azurite then run stop.sh: exit 0 within the bound, `lsof -i :10000` empty, `pgrep -f azurite` empty, repeated 5 times in a row; stop.sh with nothing running exits 0; `bash -n scripts/emulators/*.sh` and `shellcheck` (if on PATH) clean; start + stop with the state dir shared with a concurrently running second emulator does not kill the other state dir's processes.
+  - **Blocked by:** 21 | **Blocks:** 20, 17
+  - **Recommended task executor category:** `quick`
+
+- [x] 5b. Make the default root-package test run bounded (follow-up from F2 blocker B1)
+  - **What to do:** in `/Volumes/code/ipam`: `TestAllocateLatencyAndCallCountAtFiveThousand` (client_attempt3_test.go) builds its 5000 allocations with 5000 real `Allocate` calls (each re-encodes the whole reservations document), taking ~589s under `-race`, so `go test -race -count=1 .` (what `make test` and CI run) hits the 10-minute default timeout. Build the 5000-allocation reservations document DIRECTLY (encode it with the package's own document encoder and write it with one put on the memory store), then measure and assert the call counts (2 Gets + 1 Put) and a generous latency bound on ONE real `Allocate` against it; keep a smaller real-`Allocate` ramp (e.g. 300) so the loop is still exercised end to end. Also make the lifecycle stress tests (TestLifecycleStress*) default to small seed counts (e.g. 20 memory seeds, 3 local seeds) while the existing GATE_SEEDS / GATE_LOCAL_SEEDS / GATE_OFFSET env vars still select full runs; and add `-timeout 20m` to the Makefile `test` target.
+  - **Must NOT do:** no change to production code; no weakening of any assertion; the full-seed runs must still be selectable by env.
+  - **Acceptance criteria:** `go test -race -count=1 ./...` in /Volumes/code/ipam passes in under 5 minutes wall clock on this machine (record the time), with no skips of the latency test; `GATE_SEEDS=400 go test . -run ^TestLifecycleStressMemory$` still runs 400 seeds; mutation: making Allocate do an extra Get makes the call-count test fail.
+  - **Recommended task executor category:** `unspecified-low`
+
+- [x] 7a. S3 backend: a write retried by the SDK after a possibly-applied attempt must be ErrUnknownOutcome (follow-up from F2 finding M1)
+  - **What to do:** in `/Volumes/code/ipam/storage/s3`: if the AWS SDK's automatic retry follows a PutObject/DeleteObject whose earlier attempt may have been applied, the retry's 412/409 is currently mapped to ErrPreconditionFailed (reproduced by F2: puts=2 isPrecondition=true isUnknown=false); it must be reported as storage.ErrUnknownOutcome, exactly as the Azure backend does (read storage/azblob for the pattern: an attempt counts as 'may have been applied' only once request bytes may have been sent (net/http WroteHeaders trace hook, or a 408/5xx response); pre-send errors (DNS, dial, TLS handshake) are NOT unknown; a first-attempt 412 stays ErrPreconditionFailed). Read the T8 reviewer reports under /Volumes/code/terraform-provider-ipam/.omo/evidence/task-8-ipam-provider-design-gate-review.md for the subtleties. Tests with an httptest server: attempt 1 hangs/resets after headers, attempt 2 returns 412 -> ErrUnknownOutcome (create, put, delete); plain first-attempt 412 -> ErrPreconditionFailed with exactly 1 request; 500 then 412 -> unknown; pre-send failures not unknown; prove each new test fails when the logic is removed (scratch mutation).
+  - **Must NOT do:** no change to the storage contract or other backends; no retries added at the backend layer beyond the SDK's.
+  - **Acceptance criteria:** `go test ./storage/s3 -race -count=20` passes; `go vet`, lint, gofmt clean; the MinIO integration with IPAM_TEST_S3_SKIP_CONDITIONAL_DELETE=1 still passes (start+stop in one shell command, own IPAM_EMULATOR_STATE_DIR, lsof clean afterwards).
+  - **Recommended task executor category:** `unspecified-high`
+
+- [x] 21. Emulator preflight (Wave 1)
   - **What to do,** in the client repo (`/Volumes/code/ipam/scripts/emulators/`):
     - `start-azurite.sh`: `npx --yes azurite-blob --silent --skipApiVersionCheck --location "$TMPDIR/azurite" --blobPort 10000`, waits for the port, prints the well-known dev connection string.
     - `start-s3.sh`: locate or install a MinIO server binary without Docker. Check PATH, then `brew install minio/stable/minio`, then a direct download from `https://dl.min.io/server/minio/release/<os>-<arch>/minio` into `$TMPDIR`. Record the exact source used. Start on `:9000` with a temp dir and create a test bucket.
@@ -912,7 +975,7 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
 
 ## Final verification wave
 > Runs in parallel after ALL todos. ALL must APPROVE. Surface results and wait for the user's explicit okay before declaring complete.
-- [ ] F1. Plan compliance audit
+- [x] F1. Plan compliance audit
   - Every todo's acceptance command is re-run, and every Must NOT have is checked:
     - `go list -m all` in both repos shows no `gocloud.dev` module.
     - `terraform providers schema -json | jq` shows no `access_key`, `secret_key` or `account_key` provider attributes, no `key` or `owner` on `ipam_allocation`, and no data source whose name contains `preview` or `next`.
@@ -921,17 +984,17 @@ Your next move: start execution with `/ulw-execute ipam-provider-design`, after 
     - No git remote was added.
     - `.omo/ulw-research` is unchanged.
   - **Recommended task executor category:** `unspecified-high`
-- [ ] F2. Code quality review
+- [x] F2. Code quality review
   - `golangci-lint run` passes in both repos.
   - `go test -race ./...` passes in both repos.
   - Review the CAS loop and allocator for error wrapping and for silent swallowing.
   - **Recommended task executor category:** `unspecified-high`
-- [ ] F3. Real manual QA
+- [x] F3. Real manual QA
   - Run `scripts/e2e.sh`.
   - Run the CLI happy and failure flows from todo 10 on the built binary.
   - Run `terraform plan` twice after apply and confirm no diff.
   - **Recommended task executor category:** `unspecified-high`
-- [ ] F4. Ideal-state fidelity
+- [x] F4. Ideal-state fidelity
   - Check each IS-1..IS-11 row against the evidence in Success criteria, 1:1. Any part of a row proven only by documentation (IS-9 real-cloud enforcement) or not exercised (IS-8 real Azure credential path when no `AZURE_STORAGE_ACCOUNT_URL` was provided) is reported explicitly as UNVERIFIED, never as passed.
   - Any shortfall becomes new numbered todos.
   - **Recommended task executor category:** `unspecified-high`
