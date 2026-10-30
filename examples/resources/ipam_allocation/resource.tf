@@ -1,3 +1,6 @@
+# Copyright 2026 Appvia Ltd.
+# SPDX-License-Identifier: MPL-2.0
+
 # The next free /24 in a pool.
 resource "ipam_allocation" "vnet" {
   pool          = "uks"

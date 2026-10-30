@@ -1,3 +1,6 @@
+# Copyright 2026 Appvia Ltd.
+# SPDX-License-Identifier: MPL-2.0
+
 module "ipam" {
   source = "../../../../terraform-aws-ipam"
 

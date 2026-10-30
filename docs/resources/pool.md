@@ -47,6 +47,9 @@ If an earlier create of the same pool was interrupted, Create waits out `access_
 ## Example Usage
 
 ```terraform
+# Copyright 2026 Appvia Ltd.
+# SPDX-License-Identifier: MPL-2.0
+
 # A root pool lists its CIDRs.
 resource "ipam_pool" "root" {
   id          = "platform"
@@ -119,6 +122,9 @@ resource "ipam_pool" "v6" {
 Import a pool by its ID.
 
 ```shell
+# Copyright 2026 Appvia Ltd.
+# SPDX-License-Identifier: MPL-2.0
+
 # Import a pool by its ID.
 terraform import ipam_pool.root platform
 ```
@@ -126,6 +132,9 @@ terraform import ipam_pool.root platform
 With Terraform 1.12 or later you can also import by identity:
 
 ```terraform
+# Copyright 2026 Appvia Ltd.
+# SPDX-License-Identifier: MPL-2.0
+
 import {
   to = ipam_pool.root
   identity = {

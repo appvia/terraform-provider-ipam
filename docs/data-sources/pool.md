@@ -13,6 +13,9 @@ Reads a pool and its current allocations.
 ## Example Usage
 
 ```terraform
+# Copyright 2026 Appvia Ltd.
+# SPDX-License-Identifier: MPL-2.0
+
 data "ipam_pool" "uks" {
   id = "uks"
 }

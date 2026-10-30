@@ -1,3 +1,6 @@
+# Copyright 2026 Appvia Ltd.
+# SPDX-License-Identifier: MPL-2.0
+
 # The contract test installs a locally built provider from a filesystem mirror
 # as 0.0.0-dev; Terraform selects a pre-release only when pinned exactly.
 terraform {
