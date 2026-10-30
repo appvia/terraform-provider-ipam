@@ -2,12 +2,9 @@ module github.com/appvia/terraform-provider-ipam
 
 go 1.26.0
 
-// TODO(release): replace with tagged version once github.com/appvia/ipam is published
-replace github.com/appvia/ipam => ../ipam
-
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3
-	github.com/appvia/ipam v0.0.0-00010101000000-000000000000
+	github.com/appvia/ipam v0.1.0
 	github.com/hashicorp/terraform-plugin-docs v0.25.0
 	github.com/hashicorp/terraform-plugin-framework v1.19.0
 	github.com/hashicorp/terraform-plugin-framework-validators v0.19.0

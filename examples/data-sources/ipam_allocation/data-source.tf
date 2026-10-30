@@ -1,3 +1,6 @@
+# Copyright 2026 Appvia Ltd.
+# SPDX-License-Identifier: MPL-2.0
+
 variable "allocation_id" {
   type = string
 }

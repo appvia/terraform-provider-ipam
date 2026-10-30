@@ -50,7 +50,7 @@ Centrality via gopls UNMEASURED (gopls not installed); refs = grep word counts i
 ## CONVENTIONS
 - Every Go file starts with `// Copyright 20XX Appvia Ltd.` + `// SPDX-License-Identifier: MPL-2.0` (goheader lint); YAML/sh/tf/tmpl files carry the same header as comments.
 - golangci-lint v2 with `default: none` + `wsl_v5`: blank line before `return`, after blocks, around `if err` chains; formatters gofmt + goimports. Imports grouped std / third-party / `github.com/appvia/ipam`.
-- `go.mod` has `replace github.com/appvia/ipam => ../ipam` (TODO(release): drop before tagging). Build needs `../ipam` checked out beside this repo.
+- `go.mod` requires the published `github.com/appvia/ipam` (v0.1.0): no `replace`, so the build needs no sibling checkout. Only `scripts/e2e.sh` still uses a sibling `../ipam` (builds the CLI from source).
 - Provider `Configure` makes no network calls (tested by `TestProviderConfigureIsOffline`); unknown provider config -> `Deferred` when allowed, else error.
 - Backend precedence: `s3` / `azure_blob` / `local` block (mutually exclusive via `objectvalidator.ConflictsWith`), else `IPAM_BACKEND` URL. `access_propagation_timeout` attr > `IPAM_ACCESS_PROPAGATION_TIMEOUT` > `5m`.
 
@@ -66,16 +66,19 @@ Centrality via gopls UNMEASURED (gopls not installed); refs = grep word counts i
 make build                 # go build -ldflags "-X main.version=$(VERSION)" -o terraform-provider-ipam .
 make test                  # go test ./... -count=1   (acc tests skip without TF_ACC)
 make testacc               # TF_ACC=1 go test ./... -count=1 -timeout 120m (local backend, temp dirs; needs terraform on PATH)
-make lint                  # golangci-lint run
+make lint                  # golangci-lint run + scripts/license-headers.sh --check
+make license-headers       # add missing Copyright/SPDX (MPL-2.0) headers to tracked files; then `make docs` if examples/ changed
+make test-scripts          # scenario tests for scripts/license-headers.sh
 make docs                  # tfplugindocs generate + validate (terraform >= 1.11 on PATH)
 make docs && cp -r docs /tmp/d1 && make docs && diff -r docs /tmp/d1   # docs must be deterministic
 bash scripts/e2e.sh        # cross-repo e2e, see scripts/AGENTS.md
 cd examples/single-apply/aws && terraform test   # plan-only contract test; needs module repos + 0.0.0-dev mirror
 ```
-CI (`test.yml`): `go build ./...`, `go vet ./...`, `go test ./... -count=1`, golangci-lint latest.
+CI (`test.yml`): `go build ./...`, `go vet ./...`, `go test ./... -count=1`, golangci-lint latest, `scripts/license-headers.sh --check`.
 
 ## NOTES
 - `go test ./...` from root does NOT cover `scripts/e2e/tools` (own go.mod).
+- Example files under `examples/` carry the license header, and tfplugindocs embeds them verbatim into `docs/`: run `make docs` after `make license-headers`.
 - terraform-plugin-testing acceptance tests never exercise `for_each` configs; that path (docs examples use it) is covered only by real-Terraform runs in `scripts/e2e.sh` (`foreach` requestor).
 - `examples/single-apply/*/versions.tf` pins `ipam` to `0.0.0-dev`: Terraform picks a pre-release only on an exact pin.
 - Module grants (terraform-aws-ipam / terraform-azurerm-ipam) tested only in plan mode and under MinIO IAM; real Azure credential path untested (README).
