@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-30
+
 ### Security
 
 - Update `google.golang.org/grpc` (now v1.85.0), `golang.org/x/net` and, in the e2e tools module, `github.com/prometheus/prometheus` (now v0.315.1). This clears the open Dependabot alerts and the reachable gRPC finding from `govulncheck`.
@@ -30,5 +32,6 @@ All notable changes to this project are documented here. The format follows
 
 - Depends on the published `github.com/appvia/ipam` v0.1.0 instead of a sibling checkout.
 
-[Unreleased]: https://github.com/appvia/terraform-provider-ipam/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/appvia/terraform-provider-ipam/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/appvia/terraform-provider-ipam/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/appvia/terraform-provider-ipam/releases/tag/v0.1.0
