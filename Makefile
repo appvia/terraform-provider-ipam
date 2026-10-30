@@ -4,7 +4,7 @@
 BINARY  := terraform-provider-ipam
 VERSION ?= dev
 
-.PHONY: build test testacc generate lint docs
+.PHONY: build test testacc generate lint license-headers check-license-headers test-scripts docs
 
 build:
 	go build -ldflags "-X main.version=$(VERSION)" -o $(BINARY) .
@@ -20,6 +20,16 @@ generate:
 
 lint:
 	golangci-lint run
+	./scripts/license-headers.sh --check
+
+license-headers:
+	./scripts/license-headers.sh
+
+check-license-headers:
+	./scripts/license-headers.sh --check
+
+test-scripts:
+	./scripts/test-license-headers.sh
 
 TFPLUGINDOCS = go run github.com/hashicorp/terraform-plugin-docs/cmd/tfplugindocs
 
