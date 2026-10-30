@@ -50,7 +50,7 @@ provider_installation {
 
 `examples/single-apply/{azure,aws}` hold a contract test between the provisioning modules and this provider (`terraform test`, plan only). They expect the module repositories next to this one and the provider installed from a filesystem mirror as version `0.0.0-dev`.
 
-`go.mod` uses `replace github.com/appvia/ipam => ../ipam` until the client module is published.
+`go.mod` depends on the published `github.com/appvia/ipam` client module. `scripts/e2e.sh` still builds the `ipam` CLI from a sibling `../ipam` checkout.
 
 ## License
 
