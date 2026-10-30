@@ -1,0 +1,38 @@
+---
+page_title: "{{.Name}} {{.Type}} - {{.ProviderName}}"
+subcategory: ""
+description: |-
+{{ .Description | plainmarkdown | trimspace | prefixlines "  " }}
+---
+
+# {{.Name}} ({{.Type}})
+
+{{ .Description | trimspace }}
+
+## Changes and replacement
+
+`description` and `labels` update in place. Changing `pool` or `prefix_length`, or setting a different `cidr`, replaces the allocation. Destroy releases the CIDR back to the pool.
+
+Set exactly one of `prefix_length` (the next free CIDR of that size) or `cidr` (exactly that range). The `id` and, with `prefix_length`, the `cidr` are unknown until apply.
+
+## Failed and uncertain creates
+
+When Create fails before anything was written (pool exhausted, overlap, invalid CIDR, pool not found), nothing is saved to state. When the outcome is uncertain (a timeout, access denied after the timeout, a network error), the provider keeps the generated ID in state and Terraform marks the resource tainted. The next apply refreshes it: if the write never landed, the entry is dropped and a new allocation is made; if it did land, the tainted allocation is released and replaced. Either way, nothing leaks.
+
+If Terraform itself is killed between the write and saving state, the allocation can leak. Find it with `ipam alloc list <pool>`, then import it or release it with `ipam alloc release <pool> <id>`.
+
+## Example Usage
+
+{{ tffile .ExampleFile }}
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+Import an allocation as `<pool>/<id>`. Import restores `prefix_length` or `cidr` from how the allocation was made, so the imported state matches the configuration that created it.
+
+{{ codefile "shell" .ImportFile }}
+
+With Terraform 1.12 or later you can also import by identity:
+
+{{ tffile .ImportIdentityConfigFile }}

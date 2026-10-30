@@ -1,0 +1,61 @@
+---
+page_title: "{{.Name}} {{.Type}} - {{.ProviderName}}"
+subcategory: ""
+description: |-
+{{ .Description | plainmarkdown | trimspace | prefixlines "  " }}
+---
+
+# {{.Name}} ({{.Type}})
+
+{{ .Description | trimspace }}
+
+## Changes and replacement
+
+`description` and `labels` update in place. Changing `id`, `cidrs`, `parent_pool`, `prefix_length` or `cidr` replaces the pool.
+
+## Destroying and replacing a parent pool
+
+A pool that still holds allocations or child pools can't be deleted. Destroy fails with `pool_not_empty`.
+
+Terraform destroys dependants before their parent only when they're replaced too. If you replace a parent pool (for example by changing its `cidrs`) while its child pools stay unchanged, the parent's delete fails with `pool_not_empty`. Add `replace_triggered_by` to each child so it's replaced with its parent:
+
+```terraform
+resource "ipam_pool" "uks" {
+  id          = "uks"
+  parent_pool = ipam_pool.root.id
+  cidr        = "10.1.0.0/16"
+
+  lifecycle {
+    replace_triggered_by = [ipam_pool.root.cidrs]
+  }
+}
+```
+
+Reference the parent as `ipam_pool.root.id` rather than a literal, or add `depends_on = [ipam_pool.root]`, so Terraform knows the order. Allocations in other states have to be released before the platform state can replace the pool.
+
+## Existing pools
+
+Create adopts a pool that already exists with an identical definition (same CIDRs, or same parent and request, description and labels) instead of failing. Two workspaces that declare the same pool therefore both own it, and either one's destroy deletes it. Keep each pool in exactly one state. A different pool with the same ID fails with `pool_exists`; import it or choose another ID.
+
+If an earlier create of the same pool was interrupted, Create waits out `access_propagation_timeout` and then fails with `timed out`. To recover with the CLI:
+
+1. `ipam pool get <id>` reports such a partially created pool as not found. For a child pool, the leftover shows in `ipam alloc list <parent>` as a `pool:<child>:<incarnation>` entry.
+2. Run `ipam pool delete <id>` to clear the pool's own documents. When the pool's reservations document is the missing one, this also releases the parent's reservation.
+3. If `ipam alloc list <parent>` still lists the `pool:<child>:<incarnation>` entry, release it by its full ID with `ipam alloc release <parent> pool:<child>:<incarnation>`, but only once no create of that child is running anywhere.
+4. Apply again.
+
+## Example Usage
+
+{{ tffile .ExampleFile }}
+
+{{ .SchemaMarkdown | trimspace }}
+
+## Import
+
+Import a pool by its ID.
+
+{{ codefile "shell" .ImportFile }}
+
+With Terraform 1.12 or later you can also import by identity:
+
+{{ tffile .ImportIdentityConfigFile }}

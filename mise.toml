@@ -1,0 +1,7 @@
+# Copyright 2026 Appvia Ltd.
+# SPDX-License-Identifier: MPL-2.0
+
+[tools]
+golangci-lint = "latest"
+opentofu = "latest"
+terraform = "latest"

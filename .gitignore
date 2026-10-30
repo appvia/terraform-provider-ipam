@@ -1,1 +1,4 @@
 .codegraph/
+/dist
+/terraform-provider-ipam
+/scripts/e2e/tools/tools
