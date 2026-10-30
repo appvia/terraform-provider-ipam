@@ -14,6 +14,7 @@ All notable changes to this project are documented here. The format follows
 
 - Update all dependencies in the provider and the e2e tools module to their latest versions.
 - Require Go 1.27.3.
+- Depend on `github.com/appvia/ipam` v0.2.0.
 
 ## [0.1.0] - 2026-10-30
 

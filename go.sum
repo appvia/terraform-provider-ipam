@@ -47,8 +47,8 @@ github.com/apparentlymart/go-textseg/v15 v15.0.0 h1:uYvfpb3DyLSCGWnctWKGj857c6ew
 github.com/apparentlymart/go-textseg/v15 v15.0.0/go.mod h1:K8XmNZdhEBkdlyDdvbmmsvpAG721bKi0joRfFdHIWJ4=
 github.com/apparentlymart/go-textseg/v17 v17.0.1 h1:bpMXRgQ5cEoRNuQke1a80/Nl6w3G5eoIbWo9f3gXkAs=
 github.com/apparentlymart/go-textseg/v17 v17.0.1/go.mod h1:fa8X4jgGeevslICIY6LcdjkSecWnXmYd9Lk34z/VxZs=
-github.com/appvia/ipam v0.1.0 h1:w/MtS6btmVNOhqHQIRalokbWgGmLev+y9TJMKjB/TO4=
-github.com/appvia/ipam v0.1.0/go.mod h1:5mY6mQ6RHetBgbwMobkgahRM5vr7Bt4DAwbHmdiD3aw=
+github.com/appvia/ipam v0.2.0 h1:fUfyFSzUIPGpz4HXW7xHR/opkzEO1Aps1bNPt1wFWKY=
+github.com/appvia/ipam v0.2.0/go.mod h1:X1fcdLEUC8e6FkFTmb2FwqcuUaAgfV9WWfEPRCG0ePE=
 github.com/armon/go-radix v1.0.0 h1:F4z6KzEeeQIMeLFa97iZU6vupzoecKdU5TX24SNppXI=
 github.com/armon/go-radix v1.0.0/go.mod h1:ufUuZ+zHj4x4TnLV4JWEpy2hxWSpsRywHrMgIH9cCH8=
 github.com/aws/aws-sdk-go-v2 v1.47.5 h1:5yA+A+BiXbDq1ZLbYwPViwhEGDMdR0MEhL8Jh2LnLS4=

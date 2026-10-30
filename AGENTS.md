@@ -50,7 +50,7 @@ Centrality via gopls UNMEASURED (gopls not installed); refs = grep word counts i
 ## CONVENTIONS
 - Every Go file starts with `// Copyright 20XX Appvia Ltd.` + `// SPDX-License-Identifier: MPL-2.0` (goheader lint); YAML/sh/tf/tmpl files carry the same header as comments.
 - golangci-lint v2 with `default: none` + `wsl_v5`: blank line before `return`, after blocks, around `if err` chains; formatters gofmt + goimports. Imports grouped std / third-party / `github.com/appvia/ipam`.
-- `go.mod` requires the published `github.com/appvia/ipam` (v0.1.0): no `replace`, so the build needs no sibling checkout. Only `scripts/e2e.sh` still uses a sibling `../ipam` (builds the CLI from source).
+- `go.mod` requires the published `github.com/appvia/ipam` (v0.2.0): no `replace`, so the build needs no sibling checkout. Only `scripts/e2e.sh` still uses a sibling `../ipam` (builds the CLI from source).
 - Provider `Configure` makes no network calls (tested by `TestProviderConfigureIsOffline`); unknown provider config -> `Deferred` when allowed, else error.
 - Backend precedence: `s3` / `azure_blob` / `local` block (mutually exclusive via `objectvalidator.ConflictsWith`), else `IPAM_BACKEND` URL. `access_propagation_timeout` attr > `IPAM_ACCESS_PROPAGATION_TIMEOUT` > `5m`.
 
