@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Security
+
+- Update `google.golang.org/grpc` to v1.83.1, and `github.com/prometheus/prometheus` to v0.311.3 in the e2e tools module, to clear the open Dependabot alerts.
+
 ## [0.1.0] - 2026-10-30
 
 ### Added
