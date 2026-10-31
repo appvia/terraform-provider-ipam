@@ -48,7 +48,7 @@ Centrality via gopls UNMEASURED (gopls not installed); refs = grep word counts i
 | `isolateEnv` | test helper | provider_test.go | 19 | blanks ARM_/AZURE_/AWS_/IPAM_/ACTIONS_ID_TOKEN_/SYSTEM_ env |
 
 ## CONVENTIONS
-- Every Go file starts with `// Copyright 20XX Appvia Ltd.` + `// SPDX-License-Identifier: MPL-2.0` (goheader lint); YAML/sh/tf/tmpl files carry the same header as comments.
+- Every Go file starts with `// Copyright 20XX Appvia Ltd.` + `// SPDX-License-Identifier: Apache-2.0` (goheader lint); YAML/sh/tf/tmpl files carry the same header as comments.
 - golangci-lint v2 with `default: none` + `wsl_v5`: blank line before `return`, after blocks, around `if err` chains; formatters gofmt + goimports. Imports grouped std / third-party / `github.com/appvia/ipam`.
 - `go.mod` requires the published `github.com/appvia/ipam` (v0.3.0): no `replace`, so the build needs no sibling checkout. Only `scripts/e2e.sh` still uses a sibling `../ipam` (builds the CLI from source).
 - Provider `Configure` makes no network calls (tested by `TestProviderConfigureIsOffline`); unknown provider config -> `Deferred` when allowed, else error.
@@ -67,7 +67,7 @@ make build                 # go build -ldflags "-X main.version=$(VERSION)" -o t
 make test                  # go test ./... -count=1   (acc tests skip without TF_ACC)
 make testacc               # TF_ACC=1 go test ./... -count=1 -timeout 120m (local backend, temp dirs; needs terraform on PATH)
 make lint                  # golangci-lint run + scripts/license-headers.sh --check
-make license-headers       # add missing Copyright/SPDX (MPL-2.0) headers to tracked files; then `make docs` if examples/ changed
+make license-headers       # add missing Copyright/SPDX (Apache-2.0) headers to tracked files; then `make docs` if examples/ changed
 make test-scripts          # scenario tests for scripts/license-headers.sh
 make docs                  # tfplugindocs generate + validate (terraform >= 1.11 on PATH)
 make docs && cp -r docs /tmp/d1 && make docs && diff -r docs /tmp/d1   # docs must be deterministic

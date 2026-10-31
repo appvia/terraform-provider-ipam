@@ -6,6 +6,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Relicensed from MPL-2.0 to Apache-2.0, matching the `github.com/appvia/ipam` library.
+
 ## [0.2.0] - 2026-10-31
 
 ### Added

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Appvia Ltd.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: Apache-2.0
 
 # Usage: license-headers.sh [--check]
 # Adds the SPDX copyright header to every tracked source file in the current git repo that lacks
@@ -9,10 +9,10 @@
 # generated files itself.
 set -euo pipefail
 
-SPDX='SPDX-License-Identifier: MPL-2.0'
+SPDX='SPDX-License-Identifier: Apache-2.0'
 COPYRIGHT="Copyright $(date +%Y) Appvia Ltd."
 COPYRIGHT_RE='^(//|#) Copyright 20[0-9]{2} Appvia Ltd\.$'
-SPDX_RE='^(//|#) SPDX-License-Identifier: MPL-2\.0$'
+SPDX_RE='^(//|#) SPDX-License-Identifier: Apache-2\.0$'
 
 check=false
 case "${1:-}" in

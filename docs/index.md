@@ -16,7 +16,7 @@ The IPAM provider hands out non-overlapping CIDRs from pools that live as JSON d
 
 ```terraform
 # Copyright 2026 Appvia Ltd.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: Apache-2.0
 
 terraform {
   required_providers {

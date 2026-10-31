@@ -25,7 +25,7 @@ If Terraform itself is killed between the write and saving state, the allocation
 
 ```terraform
 # Copyright 2026 Appvia Ltd.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: Apache-2.0
 
 # The next free /24 in a pool.
 resource "ipam_allocation" "vnet" {
@@ -99,7 +99,7 @@ Import an allocation as `<pool>/<id>`. Import restores `prefix_length` or `cidr`
 
 ```shell
 # Copyright 2026 Appvia Ltd.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: Apache-2.0
 
 # Import an allocation as <pool>/<allocation id>.
 terraform import ipam_allocation.vnet uks/018f22e2-1865-7be8-9f45-35d90607d0f7
@@ -109,7 +109,7 @@ With Terraform 1.12 or later you can also import by identity:
 
 ```terraform
 # Copyright 2026 Appvia Ltd.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: Apache-2.0
 
 import {
   to = ipam_allocation.vnet

@@ -13,7 +13,7 @@ You can create the storage account or bucket, the access grants and the first po
 
 ```terraform
 # Copyright 2026 Appvia Ltd.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: Apache-2.0
 
 module "ipam" {
   source = "../../../../terraform-azurerm-ipam"
@@ -53,7 +53,7 @@ resource "ipam_pool" "uks_prod" {
 
 ```terraform
 # Copyright 2026 Appvia Ltd.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: Apache-2.0
 
 module "ipam" {
   source = "../../../../terraform-aws-ipam"
