@@ -53,6 +53,9 @@ var reasonHints = map[string]string{
 	"overlap":     "The requested CIDR overlaps an existing allocation or child pool in this pool; choose a free CIDR.",
 	"pool_incomplete": "An interrupted create or delete left partial documents for this pool. Run " +
 		"`ipam pool delete <id>` to clear them, then retry.",
+	"cooldown": "Strict cooldown holds recently released CIDRs back from next requests; the error names when " +
+		"cooling space becomes usable. Wait until then, request an explicit cidr (explicit requests bypass " +
+		"cooldown), or switch the pool's cooldown mode to fit-aware or remove it.",
 }
 
 // errorDiagnostic maps an ipam error onto a diagnostic whose summary names the
