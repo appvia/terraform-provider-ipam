@@ -41,7 +41,17 @@ output "uks_allocations" {
 
 - `allocations` (Map of String) Allocation ID to CIDR, including child-pool carve-outs (IDs `pool:<child>:<incarnation>`).
 - `cidrs` (Set of String) The pool's CIDRs.
+- `cooldown` (Attributes) Cooldown for released CIDRs, duration in Go canonical form such as `24h0m0s`; null when none. (see [below for nested schema](#nestedatt--cooldown))
 - `description` (String) Description.
 - `family` (Number) Address family: 4 or 6.
 - `labels` (Map of String) Labels.
 - `parent_pool` (String) Parent pool ID; null for a root pool.
+- `strategy` (String) Allocation strategy: `lowest` or `best-fit`.
+
+<a id="nestedatt--cooldown"></a>
+### Nested Schema for `cooldown`
+
+Read-Only:
+
+- `duration` (String) Go duration, such as `24h0m0s`.
+- `mode` (String) `strict` or `fit-aware`.

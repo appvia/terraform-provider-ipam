@@ -32,6 +32,14 @@ resource "ipam_pool" "env" {
   id            = "uks-${each.key}"
   parent_pool   = ipam_pool.uks.id
   prefix_length = 20
+
+  # Pack allocations tightly and hold released CIDRs back for a day.
+  strategy = "best-fit"
+  cooldown = {
+    mode     = "strict"
+    duration = "24h"
+  }
+
   labels = {
     environment = each.key
   }
