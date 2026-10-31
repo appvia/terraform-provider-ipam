@@ -14,7 +14,7 @@ Reads one existing allocation by pool and ID.
 
 ```terraform
 # Copyright 2026 Appvia Ltd.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: Apache-2.0
 
 variable "allocation_id" {
   type = string

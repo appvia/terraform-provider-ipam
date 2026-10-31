@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Appvia Ltd.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: Apache-2.0
 
 # Scenario tests for license-headers.sh: check mode, insertion, shebangs, idempotence and partial headers.
 set -euo pipefail
@@ -39,8 +39,8 @@ else bad "check scenario (rc=$rc)"; cat "$TMP/a.out" >&2; fi
 
 # (b) fix mode: Go header on top with a blank line, shell header after the shebang, mode kept.
 "$HEADERS" >/dev/null
-want_go="// Copyright $YEAR Appvia Ltd."$'\n'"// SPDX-License-Identifier: MPL-2.0"$'\n\n'"package main"
-want_sh="#!/usr/bin/env bash"$'\n'"# Copyright $YEAR Appvia Ltd."$'\n'"# SPDX-License-Identifier: MPL-2.0"$'\n\n'"echo hi"
+want_go="// Copyright $YEAR Appvia Ltd."$'\n'"// SPDX-License-Identifier: Apache-2.0"$'\n\n'"package main"
+want_sh="#!/usr/bin/env bash"$'\n'"# Copyright $YEAR Appvia Ltd."$'\n'"# SPDX-License-Identifier: Apache-2.0"$'\n\n'"echo hi"
 if [ "$(cat main.go)" = "$want_go" ] && [ "$(cat run.sh)" = "$want_sh" ] && [ -x run.sh ] &&
   [ "$(cat README.md)" = '# Title' ] && [ "$(cat x/testdata/f.go)" = 'package fixture' ]; then
   ok "fix: headers inserted, shebang first, mode kept, md/testdata untouched"
@@ -54,15 +54,15 @@ if [ ! -s "$TMP/c.out" ] && [ "$(cat main.go run.sh)" = "$before" ] && "$HEADERS
 else bad "idempotent scenario"; fi
 
 # (d) partial headers: check flags them; fix adds only the missing line, in the file's comment style.
-printf '# SPDX-License-Identifier: MPL-2.0\nlocals {}\n' >spdx-only.tf
+printf '# SPDX-License-Identifier: Apache-2.0\nlocals {}\n' >spdx-only.tf
 printf '// Copyright 2025 Appvia Ltd.\n\npackage partial\n' >copyright-only.go
 git add spdx-only.tf copyright-only.go
 set +e
 "$HEADERS" --check >"$TMP/d.out" 2>&1
 rc=$?
 set -e
-want_tf="# Copyright $YEAR Appvia Ltd."$'\n'"# SPDX-License-Identifier: MPL-2.0"$'\n'"locals {}"
-want_go2="// Copyright 2025 Appvia Ltd."$'\n'"// SPDX-License-Identifier: MPL-2.0"$'\n\n'"package partial"
+want_tf="# Copyright $YEAR Appvia Ltd."$'\n'"# SPDX-License-Identifier: Apache-2.0"$'\n'"locals {}"
+want_go2="// Copyright 2025 Appvia Ltd."$'\n'"// SPDX-License-Identifier: Apache-2.0"$'\n\n'"package partial"
 if [ "$rc" -eq 1 ] && grep -qF 'incomplete license header: spdx-only.tf' "$TMP/d.out" &&
   grep -qF 'incomplete license header: copyright-only.go' "$TMP/d.out" &&
   "$HEADERS" >/dev/null && [ "$(cat spdx-only.tf)" = "$want_tf" ] &&
@@ -76,7 +76,7 @@ git add edge.yml
 "$HEADERS" >/dev/null
 first="$(cat edge.yml)"
 "$HEADERS" >"$TMP/e.out"
-if [ "$(sed -n 11p edge.yml)" = '# SPDX-License-Identifier: MPL-2.0' ] && [ ! -s "$TMP/e.out" ] &&
+if [ "$(sed -n 11p edge.yml)" = '# SPDX-License-Identifier: Apache-2.0' ] && [ ! -s "$TMP/e.out" ] &&
   [ "$(cat edge.yml)" = "$first" ] && "$HEADERS" --check; then
   ok "boundary: SPDX added after line-10 copyright, rerun no-op, check rc 0"
 else bad "boundary scenario"; cat edge.yml "$TMP/e.out" >&2; fi

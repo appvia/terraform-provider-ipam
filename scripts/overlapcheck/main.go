@@ -1,5 +1,5 @@
 // Copyright 2026 Appvia Ltd.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: Apache-2.0
 
 // Command overlapcheck reads CIDRs, one per line, from stdin and exits 0 only
 // when they are all valid, distinct and pairwise non-overlapping. It uses

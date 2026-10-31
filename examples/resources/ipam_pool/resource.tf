@@ -1,5 +1,5 @@
 # Copyright 2026 Appvia Ltd.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: Apache-2.0
 
 # A root pool lists its CIDRs.
 resource "ipam_pool" "root" {

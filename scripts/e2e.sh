@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Copyright 2026 Appvia Ltd.
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: Apache-2.0
 
 # Cross-repo end-to-end test: the real `ipam` CLI (built from ../ipam) and the
 # real provider (built here, loaded by Terraform through dev_overrides) share

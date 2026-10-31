@@ -1,5 +1,5 @@
 // Copyright 2026 Appvia Ltd.
-// SPDX-License-Identifier: MPL-2.0
+// SPDX-License-Identifier: Apache-2.0
 
 // Command e2etools prepares emulator fixtures for scripts/e2e.sh. It is a
 // separate module so the MinIO admin client never enters the provider's
