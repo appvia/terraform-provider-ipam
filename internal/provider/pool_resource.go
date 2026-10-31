@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"net/netip"
 	"regexp"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/setvalidator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
+	"github.com/hashicorp/terraform-plugin-framework/attr"
 	"github.com/hashicorp/terraform-plugin-framework/diag"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
@@ -25,6 +27,7 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/tfsdk"
 	"github.com/hashicorp/terraform-plugin-framework/types"
+	"github.com/hashicorp/terraform-plugin-framework/types/basetypes"
 
 	"github.com/appvia/ipam"
 )
@@ -51,7 +54,16 @@ type poolResourceModel struct {
 	Family       types.Int64  `tfsdk:"family"`
 	Description  types.String `tfsdk:"description"`
 	Labels       types.Map    `tfsdk:"labels"`
+	Strategy     types.String `tfsdk:"strategy"`
+	Cooldown     types.Object `tfsdk:"cooldown"`
 }
+
+type cooldownModel struct {
+	Mode     types.String `tfsdk:"mode"`
+	Duration types.String `tfsdk:"duration"`
+}
+
+var cooldownAttrTypes = map[string]attr.Type{"mode": types.StringType, "duration": types.StringType}
 
 type poolIdentityModel struct {
 	ID types.String `tfsdk:"id"`
@@ -74,8 +86,9 @@ func poolIDValidators() []validator.String {
 func (r *poolResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Description: "A pool of IP ranges. A root pool lists its `cidrs`; a child pool is carved from " +
-			"`parent_pool` with either `prefix_length` or an explicit `cidr`. Only `description` and " +
-			"`labels` update in place; every other change replaces the pool. A pool that still holds " +
+			"`parent_pool` with either `prefix_length` or an explicit `cidr`. Only `description`, " +
+			"`labels`, `strategy` and `cooldown` update in place; every other change replaces the pool. " +
+			"A pool that still holds " +
 			"allocations or child pools cannot be destroyed.",
 		Attributes: map[string]schema.Attribute{
 			"id": schema.StringAttribute{
@@ -130,6 +143,41 @@ func (r *poolResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 				ElementType: types.StringType,
 				Optional:    true,
 				Description: "Free-form labels. Updated in place.",
+			},
+			"strategy": schema.StringAttribute{
+				Optional: true,
+				Computed: true,
+				Description: "Allocation strategy for `next` requests: `best-fit` (smallest free block that " +
+					"fits) or `lowest` (lowest free address). Defaults to `best-fit` for new pools; an existing " +
+					"or adopted pool keeps its stored strategy while `strategy` is omitted, and a pool re-created " +
+					"by replacement gets `best-fit` unless `strategy` is set. Updated in place. A pool with " +
+					"`best-fit` or a cooldown is stored as a v2 document that the ipam CLI and library before " +
+					"v0.3.0 and terraform-provider-ipam v0.1.x cannot read.",
+				Validators: []validator.String{
+					stringvalidator.OneOf(string(ipam.StrategyLowest), string(ipam.StrategyBestFit)),
+				},
+				PlanModifiers: []planmodifier.String{stringplanmodifier.UseStateForUnknown()},
+			},
+			"cooldown": schema.SingleNestedAttribute{
+				Optional:    true,
+				Description: "Holds released CIDRs back from `next` requests. Omit for no cooldown. Updated in place.",
+				Attributes: map[string]schema.Attribute{
+					"mode": schema.StringAttribute{
+						Required: true,
+						Description: "`strict` refuses a `next` request while only cooling space fits it; " +
+							"`fit-aware` avoids cooling space only when an equally tight free block exists. " +
+							"Explicit `cidr` requests bypass cooldown.",
+						Validators: []validator.String{
+							stringvalidator.OneOf(string(ipam.CooldownStrict), string(ipam.CooldownFitAware)),
+						},
+					},
+					"duration": schema.StringAttribute{
+						Required: true,
+						Description: "How long a released CIDR cools, as a Go duration in whole seconds " +
+							"between 1s and 8760h, for example `24h`.",
+						Validators: []validator.String{cooldownDuration{}},
+					},
+				},
 			},
 		},
 	}
@@ -230,6 +278,16 @@ func (r *poolResource) Create(ctx context.Context, req resource.CreateRequest, r
 	pool, err := r.data.Client.CreatePool(mctx, spec)
 	if err != nil {
 		resp.Diagnostics.Append(errorDiagnostic("Create pool", err))
+
+		return
+	}
+
+	// An omitted cooldown matches any stored one, so CreatePool adopted an
+	// existing pool whose cooldown the configuration does not declare.
+	if plan.Cooldown.IsNull() && pool.Policy.Cooldown.Mode != ipam.CooldownNone {
+		resp.Diagnostics.Append(errorDiagnostic("Create pool", &ipam.OpError{
+			Op: "create pool", Pool: pool.ID, Reason: "pool_exists", Err: ipam.ErrConflict,
+		}))
 
 		return
 	}
@@ -376,14 +434,49 @@ func (m poolResourceModel) labels(ctx context.Context) (map[string]string, diag.
 	return labels, diags
 }
 
+// policy returns the configured policy: a null or unknown strategy is
+// StrategyDefault and a null cooldown is no cooldown.
+func (m poolResourceModel) policy(ctx context.Context) (ipam.PoolPolicy, diag.Diagnostics) {
+	var (
+		policy ipam.PoolPolicy
+		diags  diag.Diagnostics
+	)
+
+	if !m.Strategy.IsNull() && !m.Strategy.IsUnknown() {
+		policy.Strategy = ipam.AllocationStrategy(m.Strategy.ValueString())
+	}
+
+	if m.Cooldown.IsNull() || m.Cooldown.IsUnknown() {
+		return policy, diags
+	}
+
+	var cooldown cooldownModel
+
+	diags.Append(m.Cooldown.As(ctx, &cooldown, basetypes.ObjectAsOptions{})...)
+
+	duration, err := time.ParseDuration(cooldown.Duration.ValueString())
+	if err != nil {
+		diags.AddAttributeError(path.Root("cooldown").AtName("duration"), "Invalid cooldown duration", err.Error())
+
+		return policy, diags
+	}
+
+	policy.Cooldown = ipam.Cooldown{Mode: ipam.CooldownMode(cooldown.Mode.ValueString()), Duration: duration}
+
+	return policy, diags
+}
+
 func (m poolResourceModel) spec(ctx context.Context) (ipam.PoolSpec, diag.Diagnostics) {
 	labels, diags := m.labels(ctx)
+	policy, policyDiags := m.policy(ctx)
+	diags.Append(policyDiags...)
 
 	spec := ipam.PoolSpec{
 		ID:          m.ID.ValueString(),
 		ParentPool:  m.ParentPool.ValueString(),
 		Description: m.Description.ValueString(),
 		Labels:      labels,
+		Policy:      policy,
 	}
 
 	if spec.ParentPool == "" {
@@ -453,7 +546,77 @@ func (m *poolResourceModel) setPool(ctx context.Context, pool ipam.Pool) diag.Di
 		m.Labels = types.MapNull(types.StringType)
 	}
 
+	m.Strategy = types.StringValue(string(pool.Policy.Strategy))
+
+	diags.Append(m.setCooldown(ctx, pool.Policy.Cooldown)...)
+
 	return diags
+}
+
+// setCooldown copies the stored cooldown into the model, keeping the model's
+// duration spelling ("24h" rather than "24h0m0s") while it means the same.
+func (m *poolResourceModel) setCooldown(ctx context.Context, cooldown ipam.Cooldown) diag.Diagnostics {
+	if cooldown.Mode == ipam.CooldownNone {
+		m.Cooldown = types.ObjectNull(cooldownAttrTypes)
+
+		return nil
+	}
+
+	var diags diag.Diagnostics
+
+	duration := cooldown.Duration.String()
+
+	if !m.Cooldown.IsNull() && !m.Cooldown.IsUnknown() {
+		var prior cooldownModel
+
+		diags.Append(m.Cooldown.As(ctx, &prior, basetypes.ObjectAsOptions{})...)
+
+		parsed, err := time.ParseDuration(prior.Duration.ValueString())
+		if err == nil && parsed == cooldown.Duration {
+			duration = prior.Duration.ValueString()
+		}
+	}
+
+	object, objectDiags := types.ObjectValue(cooldownAttrTypes, map[string]attr.Value{
+		"mode":     types.StringValue(string(cooldown.Mode)),
+		"duration": types.StringValue(duration),
+	})
+	diags.Append(objectDiags...)
+
+	m.Cooldown = object
+
+	return diags
+}
+
+// cooldownDuration requires a Go duration of whole seconds within the bounds
+// the ipam library accepts.
+type cooldownDuration struct{}
+
+func (cooldownDuration) Description(context.Context) string {
+	return "value must be a whole number of seconds between 1s and 8760h, for example 24h"
+}
+
+func (v cooldownDuration) MarkdownDescription(ctx context.Context) string { return v.Description(ctx) }
+
+func (cooldownDuration) ValidateString(_ context.Context, req validator.StringRequest, resp *validator.StringResponse) {
+	if req.ConfigValue.IsNull() || req.ConfigValue.IsUnknown() {
+		return
+	}
+
+	raw := req.ConfigValue.ValueString()
+
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		resp.Diagnostics.AddAttributeError(req.Path, "Invalid cooldown duration",
+			fmt.Sprintf("%q is not a Go duration such as 24h.", raw))
+
+		return
+	}
+
+	if d%time.Second != 0 || d < time.Second || d > 8760*time.Hour {
+		resp.Diagnostics.AddAttributeError(req.Path, "Invalid cooldown duration",
+			fmt.Sprintf("%q must be a whole number of seconds between 1s and 8760h, for example 24h.", raw))
+	}
 }
 
 // canonicalCIDR requires the form the ipam library stores (masked, lowercase),

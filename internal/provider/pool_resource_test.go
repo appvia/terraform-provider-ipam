@@ -651,6 +651,240 @@ func TestAccPoolResourceCreateConflict(t *testing.T) {
 	})
 }
 
+// testAccCheckPolicy compares a pool's stored policy with want.
+func testAccCheckPolicy(t *testing.T, dir, id string, want ipam.PoolPolicy) acc.TestCheckFunc {
+	return func(*terraform.State) error {
+		pool, err := testAccClient(t, dir).GetPool(context.Background(), id)
+		if err != nil {
+			return err
+		}
+
+		if pool.Policy != want {
+			return fmt.Errorf("pool %s stored policy %+v, want %+v", id, pool.Policy, want)
+		}
+
+		return nil
+	}
+}
+
+func TestAccPoolResourcePolicyDefault(t *testing.T) {
+	dir := testAccBackend(t)
+
+	acc.Test(t, acc.TestCase{
+		ProtoV6ProviderFactories: testAccFactories(),
+		CheckDestroy:             testAccCheckPoolsDestroyed(t, dir),
+		Steps: []acc.TestStep{
+			{
+				Config: testAccConfig(dir, testAccRootPool),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("ipam_pool.root", tfjsonpath.New("strategy"), knownvalue.StringExact("best-fit")),
+					statecheck.ExpectKnownValue("ipam_pool.root", tfjsonpath.New("cooldown"), knownvalue.Null()),
+				},
+				Check: testAccCheckPolicy(t, dir, "root", ipam.PoolPolicy{Strategy: ipam.StrategyBestFit}),
+			},
+			{
+				Config: testAccConfig(dir, testAccRootPool),
+				ConfigPlanChecks: acc.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+				},
+			},
+		},
+	})
+}
+
+const testAccPolicyExplicit = `
+resource "ipam_pool" "root" {
+  id       = "root"
+  cidrs    = ["10.0.0.0/16"]
+  strategy = "lowest"
+  cooldown = { mode = "strict", duration = %q }
+}
+
+resource "ipam_pool" "child" {
+  id            = "child"
+  parent_pool   = ipam_pool.root.id
+  prefix_length = 24
+  strategy      = "lowest"
+  cooldown      = { mode = "strict", duration = "24h" }
+}
+`
+
+const testAccPolicyPlain = `
+resource "ipam_pool" "plain" {
+  id       = "plain"
+  cidrs    = ["192.168.0.0/16"]
+  strategy = "lowest"
+}
+`
+
+func TestAccPoolResourcePolicyExplicit(t *testing.T) {
+	dir := testAccBackend(t)
+	config := func(duration string) string {
+		return testAccConfig(dir, fmt.Sprintf(testAccPolicyExplicit, duration))
+	}
+	strict24h := ipam.PoolPolicy{
+		Strategy: ipam.StrategyLowest,
+		Cooldown: ipam.Cooldown{Mode: ipam.CooldownStrict, Duration: 24 * time.Hour},
+	}
+
+	acc.Test(t, acc.TestCase{
+		ProtoV6ProviderFactories: testAccFactories(),
+		CheckDestroy:             testAccCheckPoolsDestroyed(t, dir),
+		Steps: []acc.TestStep{
+			{
+				Config: config("24h"),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("ipam_pool.root", tfjsonpath.New("strategy"), knownvalue.StringExact("lowest")),
+					statecheck.ExpectKnownValue("ipam_pool.root",
+						tfjsonpath.New("cooldown").AtMapKey("duration"), knownvalue.StringExact("24h")),
+					statecheck.ExpectKnownValue("ipam_pool.child",
+						tfjsonpath.New("cooldown").AtMapKey("mode"), knownvalue.StringExact("strict")),
+				},
+				Check: acc.ComposeAggregateTestCheckFunc(
+					testAccCheckPolicy(t, dir, "root", strict24h),
+					testAccCheckPolicy(t, dir, "child", strict24h),
+				),
+			},
+			{
+				// Import has no configured spelling, so the duration is the
+				// canonical Go form.
+				ResourceName:                         "ipam_pool.root",
+				ImportState:                          true,
+				ImportStateId:                        "root",
+				ImportStateVerify:                    true,
+				ImportStateVerifyIdentifierAttribute: "id",
+				ImportStateVerifyIgnore:              []string{"cooldown.duration"},
+				ImportStateCheck: func(states []*terraform.InstanceState) error {
+					if len(states) != 1 {
+						return fmt.Errorf("imported %d states, want 1", len(states))
+					}
+
+					attrs := states[0].Attributes
+					if attrs["cooldown.duration"] != "24h0m0s" || attrs["cooldown.mode"] != "strict" ||
+						attrs["strategy"] != "lowest" {
+						return fmt.Errorf("imported attributes %v", attrs)
+					}
+
+					return nil
+				},
+			},
+			{
+				// A respelling of the same duration updates state only.
+				Config: config("1440m"),
+				ConfigPlanChecks: acc.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{
+						plancheck.ExpectResourceAction("ipam_pool.root", plancheck.ResourceActionUpdate),
+					},
+					PostApplyPostRefresh: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+				},
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("ipam_pool.root",
+						tfjsonpath.New("cooldown").AtMapKey("duration"), knownvalue.StringExact("1440m")),
+				},
+				Check: testAccCheckPolicy(t, dir, "root", strict24h),
+			},
+			{
+				Config: config("1440m") + testAccPolicyPlain,
+				Check:  testAccCheckPolicy(t, dir, "plain", ipam.PoolPolicy{Strategy: ipam.StrategyLowest}),
+			},
+			{
+				ResourceName:    "ipam_pool.plain",
+				ImportState:     true,
+				ImportStateKind: acc.ImportBlockWithResourceIdentity,
+			},
+		},
+	})
+}
+
+func TestAccPoolResourcePolicyAdoptsLowestPool(t *testing.T) {
+	dir := testAccBackend(t)
+	lowest := ipam.PoolPolicy{Strategy: ipam.StrategyLowest}
+
+	acc.Test(t, acc.TestCase{
+		ProtoV6ProviderFactories: testAccFactories(),
+		CheckDestroy:             testAccCheckPoolsDestroyed(t, dir),
+		Steps: []acc.TestStep{
+			{
+				PreConfig: func() {
+					_, err := testAccClient(t, dir).CreatePool(context.Background(), ipam.PoolSpec{
+						ID: "root", CIDRs: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/16")},
+						Description: "root pool", Labels: map[string]string{"env": "test"}, Policy: lowest,
+					})
+					if err != nil {
+						t.Fatalf("CreatePool: %v", err)
+					}
+				},
+				Config: testAccConfig(dir, testAccRootPool),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("ipam_pool.root", tfjsonpath.New("strategy"), knownvalue.StringExact("lowest")),
+				},
+				Check: testAccCheckPolicy(t, dir, "root", lowest),
+			},
+			{
+				Config: testAccConfig(dir, testAccRootPool),
+				ConfigPlanChecks: acc.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+				},
+			},
+			{
+				ResourceName:                         "ipam_pool.root",
+				ImportState:                          true,
+				ImportStateId:                        "root",
+				ImportStateVerify:                    true,
+				ImportStateVerifyIdentifierAttribute: "id",
+				ImportStateCheck: func(states []*terraform.InstanceState) error {
+					if len(states) != 1 || states[0].Attributes["strategy"] != "lowest" {
+						return fmt.Errorf("imported states %v, want one with strategy lowest", states)
+					}
+
+					return nil
+				},
+			},
+		},
+	})
+}
+
+func TestAccPoolResourceAdoptRequiresCooldown(t *testing.T) {
+	dir := testAccBackend(t)
+	withCooldown := strings.Replace(testAccRootPool, `labels      = { env = "test" }`,
+		`labels      = { env = "test" }
+  cooldown    = { mode = "strict", duration = "1h" }`, 1)
+
+	acc.Test(t, acc.TestCase{
+		ProtoV6ProviderFactories: testAccFactories(),
+		CheckDestroy:             testAccCheckPoolsDestroyed(t, dir),
+		Steps: []acc.TestStep{
+			{
+				PreConfig: func() {
+					_, err := testAccClient(t, dir).CreatePool(context.Background(), ipam.PoolSpec{
+						ID: "root", CIDRs: []netip.Prefix{netip.MustParsePrefix("10.0.0.0/16")},
+						Description: "root pool", Labels: map[string]string{"env": "test"},
+						Policy: ipam.PoolPolicy{Cooldown: ipam.Cooldown{Mode: ipam.CooldownStrict, Duration: time.Hour}},
+					})
+					if err != nil {
+						t.Fatalf("CreatePool: %v", err)
+					}
+				},
+				Config:      testAccConfig(dir, testAccRootPool),
+				ExpectError: regexp.MustCompile(`(?s)Create pool: conflict.*pool_exists`),
+			},
+			{
+				Config: testAccConfig(dir, withCooldown),
+				ConfigStateChecks: []statecheck.StateCheck{
+					statecheck.ExpectKnownValue("ipam_pool.root",
+						tfjsonpath.New("cooldown").AtMapKey("duration"), knownvalue.StringExact("1h")),
+				},
+			},
+			{
+				Config: testAccConfig(dir, withCooldown),
+				ConfigPlanChecks: acc.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+				},
+			},
+		},
+	})
+}
+
 func TestAccPoolResourceValidation(t *testing.T) {
 	dir := testAccBackend(t)
 
@@ -715,6 +949,48 @@ resource "ipam_pool" "p" {
   id    = "p"
   cidrs = []
 }`, `at least 1`},
+		{"unknown strategy", `
+resource "ipam_pool" "p" {
+  id       = "p"
+  cidrs    = ["10.0.0.0/16"]
+  strategy = "first-fit"
+}`, `"lowest" "best-fit"`},
+		{"unknown cooldown mode", `
+resource "ipam_pool" "p" {
+  id       = "p"
+  cidrs    = ["10.0.0.0/16"]
+  cooldown = { mode = "soft", duration = "1h" }
+}`, `"strict" "fit-aware"`},
+		{"fractional cooldown", `
+resource "ipam_pool" "p" {
+  id       = "p"
+  cidrs    = ["10.0.0.0/16"]
+  cooldown = { mode = "strict", duration = "1.5s" }
+}`, `8760h`},
+		{"zero cooldown", `
+resource "ipam_pool" "p" {
+  id       = "p"
+  cidrs    = ["10.0.0.0/16"]
+  cooldown = { mode = "strict", duration = "0s" }
+}`, `8760h`},
+		{"cooldown too long", `
+resource "ipam_pool" "p" {
+  id       = "p"
+  cidrs    = ["10.0.0.0/16"]
+  cooldown = { mode = "fit-aware", duration = "8761h" }
+}`, `8760h`},
+		{"cooldown not a duration", `
+resource "ipam_pool" "p" {
+  id       = "p"
+  cidrs    = ["10.0.0.0/16"]
+  cooldown = { mode = "strict", duration = "tomorrow" }
+}`, `Go duration`},
+		{"cooldown without duration", `
+resource "ipam_pool" "p" {
+  id       = "p"
+  cidrs    = ["10.0.0.0/16"]
+  cooldown = { mode = "strict" }
+}`, `attribute "duration" is`},
 	}
 
 	steps := make([]acc.TestStep, 0, len(cases))
