@@ -26,6 +26,8 @@ type poolDataSourceModel struct {
 	Description types.String `tfsdk:"description"`
 	Labels      types.Map    `tfsdk:"labels"`
 	Allocations types.Map    `tfsdk:"allocations"`
+	Strategy    types.String `tfsdk:"strategy"`
+	Cooldown    types.Object `tfsdk:"cooldown"`
 }
 
 // NewPoolDataSource returns the ipam_pool data source.
@@ -59,6 +61,18 @@ func (d *poolDataSource) Schema(_ context.Context, _ datasource.SchemaRequest, r
 				ElementType: types.StringType,
 				Computed:    true,
 				Description: "Allocation ID to CIDR, including child-pool carve-outs (IDs `pool:<child>:<incarnation>`).",
+			},
+			"strategy": schema.StringAttribute{
+				Computed: true, Description: "Allocation strategy: `lowest` or `best-fit`.",
+			},
+			"cooldown": schema.SingleNestedAttribute{
+				Computed: true,
+				Description: "Cooldown for released CIDRs, duration in Go canonical form such as `24h0m0s`; " +
+					"null when none.",
+				Attributes: map[string]schema.Attribute{
+					"mode":     schema.StringAttribute{Computed: true, Description: "`strict` or `fit-aware`."},
+					"duration": schema.StringAttribute{Computed: true, Description: "Go duration, such as `24h0m0s`."},
+				},
 			},
 		},
 	}
@@ -116,6 +130,8 @@ func (d *poolDataSource) Read(ctx context.Context, req datasource.ReadRequest, r
 	m.Description = types.StringValue(pool.Description)
 	m.Labels = labels
 	m.Allocations = allocationMap
+	m.Strategy = resourceModel.Strategy
+	m.Cooldown = resourceModel.Cooldown
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, m)...)
 }

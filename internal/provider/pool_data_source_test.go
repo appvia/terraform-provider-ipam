@@ -22,6 +22,8 @@ resource "ipam_pool" "parent" {
   cidrs       = ["10.0.0.0/16", "10.2.0.0/16"]
   description = "platform"
   labels      = { env = "prod" }
+  strategy    = "lowest"
+  cooldown    = { mode = "strict", duration = "24h" }
 }
 
 resource "ipam_pool" "child" {
@@ -87,6 +89,12 @@ func TestAccPoolDataSource(t *testing.T) {
 					acc.TestCheckResourceAttr("data.ipam_pool.parent", "description", "platform"),
 					acc.TestCheckResourceAttr("data.ipam_pool.parent", "labels.env", "prod"),
 					acc.TestCheckNoResourceAttr("data.ipam_pool.parent", "parent_pool"),
+					acc.TestCheckResourceAttr("data.ipam_pool.parent", "strategy", "lowest"),
+					acc.TestCheckResourceAttr("data.ipam_pool.parent", "cooldown.mode", "strict"),
+					acc.TestCheckResourceAttr("data.ipam_pool.parent", "cooldown.duration", "24h0m0s"),
+					acc.TestCheckResourceAttr("data.ipam_pool.child", "strategy", "best-fit"),
+					acc.TestCheckNoResourceAttr("data.ipam_pool.child", "cooldown"),
+					acc.TestCheckNoResourceAttr("data.ipam_pool.child", "cooldown.mode"),
 					acc.TestCheckResourceAttr("data.ipam_pool.parent", "allocations.%", "2"),
 					acc.TestCheckResourceAttrSet("data.ipam_pool.parent", "allocations."+allocationID),
 					testAccCheckCarveOut,
