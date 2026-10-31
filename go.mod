@@ -4,7 +4,7 @@ go 1.27.3
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.23.3
-	github.com/appvia/ipam v0.2.0
+	github.com/appvia/ipam v0.3.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/terraform-json v0.29.0
 	github.com/hashicorp/terraform-plugin-docs v0.25.0

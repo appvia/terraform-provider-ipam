@@ -555,8 +555,9 @@ resource "ipam_allocation" "next" {
 }
 
 resource "ipam_allocation" "fixed" {
-  pool = ipam_pool.v6.id
-  cidr = "fd00:0:0:ff::/64"
+  pool       = ipam_pool.v6.id
+  cidr       = "fd00:0:0:ff::/64"
+  depends_on = [ipam_allocation.next]
 }
 `
 
@@ -728,6 +729,53 @@ resource "ipam_allocation" "first" {
 	if n := len(testAccAllocations(t, dir, "small")) + len(testAccAllocations(t, dir, "root")); n != 0 {
 		t.Fatalf("%d allocations left after failed creates", n)
 	}
+}
+
+func TestAccAllocationResourceCooldownRefusal(t *testing.T) {
+	dir := testAccBackend(t)
+
+	const pool = `
+resource "ipam_pool" "cool" {
+  id       = "cool"
+  cidrs    = ["10.9.0.0/24"]
+  cooldown = { mode = "strict", duration = "1h" }
+}
+`
+
+	allocation := func(name string) string {
+		return pool + fmt.Sprintf(`
+resource "ipam_allocation" %q {
+  pool          = ipam_pool.cool.id
+  prefix_length = 24
+}
+`, name)
+	}
+
+	acc.Test(t, acc.TestCase{
+		ProtoV6ProviderFactories: testAccFactories(),
+		CheckDestroy:             testAccCheckPoolsDestroyed(t, dir),
+		Steps: []acc.TestStep{
+			{
+				Config: testAccConfig(dir, allocation("first")),
+				Check:  acc.TestCheckResourceAttr("ipam_allocation.first", "cidr", "10.9.0.0/24"),
+			},
+			{
+				// Destroying the allocation releases its CIDR into strict cooldown.
+				Config: testAccConfig(dir, pool),
+			},
+			{
+				Config:      testAccConfig(dir, allocation("second")),
+				ExpectError: regexp.MustCompile(`(?s)pool exhausted.*Reason: cooldown`),
+			},
+			{
+				// The refusal is a definite failure, so no tainted allocation was saved.
+				Config: testAccConfig(dir, pool),
+				ConfigPlanChecks: acc.ConfigPlanChecks{
+					PreApply: []plancheck.PlanCheck{plancheck.ExpectEmptyPlan()},
+				},
+			},
+		},
+	})
 }
 
 func TestAccAllocationResourceValidation(t *testing.T) {

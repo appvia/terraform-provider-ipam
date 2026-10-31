@@ -6,6 +6,18 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-31
+
+### Added
+
+- `strategy` (`best-fit` or `lowest`) and `cooldown` (`strict` or `fit-aware` mode and a `duration`) on the `ipam_pool` resource and data source. Changing either updates the pool in place.
+- A hint for strict cooldown refusals (`pool exhausted`, reason `cooldown`): wait until the time the error names, request an explicit `cidr`, or switch the cooldown mode to `fit-aware` or remove it.
+
+### Changed
+
+- Depend on `github.com/appvia/ipam` v0.3.0.
+- New pools default to the `best-fit` strategy. A pool with `best-fit` or a cooldown is stored as a v2 document that the ipam CLI and library before v0.3.0 and terraform-provider-ipam v0.1.x can't read, so upgrade every client that uses the bucket first, or set `strategy = "lowest"` and no cooldown to keep v1 documents.
+
 ## [0.1.1] - 2026-10-30
 
 ### Security
@@ -32,6 +44,7 @@ All notable changes to this project are documented here. The format follows
 
 - Depends on the published `github.com/appvia/ipam` v0.1.0 instead of a sibling checkout.
 
-[Unreleased]: https://github.com/appvia/terraform-provider-ipam/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/appvia/terraform-provider-ipam/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/appvia/terraform-provider-ipam/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/appvia/terraform-provider-ipam/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/appvia/terraform-provider-ipam/releases/tag/v0.1.0

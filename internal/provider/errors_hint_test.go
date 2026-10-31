@@ -46,6 +46,54 @@ func TestErrorDiagnosticTimeoutHintsAtResidue(t *testing.T) {
 	}
 }
 
+func TestErrorDiagnosticCooldownHint(t *testing.T) {
+	if reasonHints["cooldown"] == "" {
+		t.Fatal(`reasonHints["cooldown"] is empty`)
+	}
+
+	var exhaustedHint string
+
+	for _, kind := range errorKinds {
+		if kind.err == ipam.ErrPoolExhausted {
+			exhaustedHint = kind.hint
+		}
+	}
+
+	if exhaustedHint == "" {
+		t.Fatal("errorKinds has no ErrPoolExhausted hint")
+	}
+
+	refused := &ipam.OpError{
+		Op: "allocate", Pool: "p", Reason: "cooldown",
+		Err: fmt.Errorf("only cooling space fits until 2026-10-31T13:00:00Z: %w", ipam.ErrPoolExhausted),
+	}
+
+	cases := map[string]error{
+		"Create allocation": &ipam.OpError{Op: "allocate", Pool: "p", Reason: "cooldown", Err: ipam.ErrPoolExhausted},
+		"Create pool":       &ipam.OpError{Op: "create pool", Pool: "kid", Reason: "cooldown", Err: refused},
+	}
+
+	for operation, err := range cases {
+		t.Run(operation, func(t *testing.T) {
+			d := errorDiagnostic(operation, err)
+
+			if d.Summary() != operation+": pool exhausted" {
+				t.Fatalf("summary = %q", d.Summary())
+			}
+
+			for _, want := range []string{"Reason: cooldown", reasonHints["cooldown"]} {
+				if !strings.Contains(d.Detail(), want) {
+					t.Fatalf("detail %q lacks %q", d.Detail(), want)
+				}
+			}
+
+			if strings.Contains(d.Detail(), exhaustedHint) {
+				t.Fatalf("detail %q carries the pool exhausted hint", d.Detail())
+			}
+		})
+	}
+}
+
 func TestErrorDiagnosticResidueHintOnlyForPoolTimeouts(t *testing.T) {
 	deadline := fmt.Errorf("x: %w", context.DeadlineExceeded)
 
