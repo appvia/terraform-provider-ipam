@@ -555,8 +555,9 @@ resource "ipam_allocation" "next" {
 }
 
 resource "ipam_allocation" "fixed" {
-  pool = ipam_pool.v6.id
-  cidr = "fd00:0:0:ff::/64"
+  pool       = ipam_pool.v6.id
+  cidr       = "fd00:0:0:ff::/64"
+  depends_on = [ipam_allocation.next]
 }
 `
 

@@ -30,8 +30,9 @@ resource "ipam_allocation" "next" {
 }
 
 resource "ipam_allocation" "fixed" {
-  pool = ipam_pool.root.id
-  cidr = "10.0.128.0/20"
+  pool       = ipam_pool.root.id
+  cidr       = "10.0.128.0/20"
+  depends_on = [ipam_allocation.next]
 }
 
 data "ipam_allocation" "next" {
