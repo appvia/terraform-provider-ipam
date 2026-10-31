@@ -356,9 +356,10 @@ func (r *poolResource) readRequest(ctx context.Context, parent *ipam.ParentRef, 
 }
 
 func (r *poolResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
-	var plan poolResourceModel
+	var plan, state poolResourceModel
 
 	resp.Diagnostics.Append(req.Plan.Get(ctx, &plan)...)
+	resp.Diagnostics.Append(req.State.Get(ctx, &state)...)
 
 	if resp.Diagnostics.HasError() {
 		return
@@ -367,8 +368,19 @@ func (r *poolResource) Update(ctx context.Context, req resource.UpdateRequest, r
 	labels, diags := plan.labels(ctx)
 	resp.Diagnostics.Append(diags...)
 
+	planPolicy, planDiags := plan.policy(ctx)
+	resp.Diagnostics.Append(planDiags...)
+
+	statePolicy, stateDiags := state.policy(ctx)
+	resp.Diagnostics.Append(stateDiags...)
+
 	if resp.Diagnostics.HasError() {
 		return
+	}
+
+	// An omitted strategy keeps the stored one.
+	if planPolicy.Strategy == ipam.StrategyDefault {
+		planPolicy.Strategy = statePolicy.Strategy
 	}
 
 	mctx, cancel := r.data.MutationContext(ctx)
@@ -381,8 +393,35 @@ func (r *poolResource) Update(ctx context.Context, req resource.UpdateRequest, r
 		return
 	}
 
+	// Rewriting an unchanged policy would turn a v1 pool document into v2.
+	if planPolicy != statePolicy {
+		err = r.updatePolicy(mctx, plan.ID.ValueString(), planPolicy)
+		if err != nil {
+			resp.Diagnostics.Append(errorDiagnostic("Update pool policy", err))
+
+			return
+		}
+	}
+
+	// plan.Strategy stays as planned: a planned null must remain null in state,
+	// and the next refresh fills it in.
 	resp.Diagnostics.Append(resp.State.Set(ctx, plan)...)
 	setIdentity(ctx, resp.Identity, plan.ID, &resp.Diagnostics)
+}
+
+// updatePolicy writes policy, reading the stored strategy when neither plan nor
+// state knows it (state written by v0.1.x and applied with -refresh=false).
+func (r *poolResource) updatePolicy(ctx context.Context, id string, policy ipam.PoolPolicy) error {
+	if policy.Strategy == ipam.StrategyDefault {
+		pool, err := r.data.Client.GetPool(ctx, id)
+		if err != nil {
+			return err
+		}
+
+		policy.Strategy = pool.Policy.Strategy
+	}
+
+	return r.data.Client.UpdatePoolPolicy(ctx, id, policy)
 }
 
 func (r *poolResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
