@@ -149,11 +149,11 @@ The usual split follows that model. The platform state owns the `ipam_pool` reso
 | Environment | read on `pools/*` and `reservations/*`; overwrite (no delete) on its own `reservations/<pool>.json`; unconditional `s3:ListBucket` on AWS |
 | Reader | read on `pools/*` and `reservations/*`; list |
 
-The [terraform-aws-ipam](https://github.com/appvia/terraform-aws-ipam) and [terraform-azurerm-ipam](https://github.com/appvia/terraform-azurerm-ipam) modules create the storage and these least-privilege grants for you.
+On Azure, the [terraform-azurerm-ipam](https://github.com/appvia/terraform-azurerm-ipam) module creates the storage and these least-privilege grants for you. On AWS, create the bucket and attach the policies below yourself.
 
 ### AWS IAM policy for an environment
 
-This is the policy `terraform-aws-ipam` attaches to an environment's roles for bucket `acme-ipam` and pools `uks-prod` and `ukw-prod`. Add `kms:Decrypt` and `kms:GenerateDataKey` on the key if the bucket uses SSE-KMS.
+This is the policy to attach to an environment's roles for bucket `acme-ipam` and pools `uks-prod` and `ukw-prod`. Add `kms:Decrypt` and `kms:GenerateDataKey` on the key if the bucket uses SSE-KMS.
 
 ```json
 {
@@ -211,10 +211,10 @@ The platform identity gets `Storage Blob Data Contributor` at container scope. D
 
 ## Recovery and known limits
 
-- **Versioning.** The documents are the only record of what's allocated. Turn on bucket versioning (S3), or blob versioning and soft delete (Azure). Both modules do this by default.
+- **Versioning.** The documents are the only record of what's allocated. Turn on bucket versioning (S3), or blob versioning and soft delete (Azure). `terraform-azurerm-ipam` does this by default.
 - **Interrupted pool create.** If an apply is killed while a pool is being created, partial documents can be left behind. The next Create of that pool waits for the whole `access_propagation_timeout` and then fails with `timed out`. `ipam pool get <id>` reports such a partially created pool as not found. For a child pool, the leftover shows in `ipam alloc list <parent>` as a `pool:<child>:<incarnation>` entry. Run `ipam pool delete <id>` to clear the pool's own documents; when the pool's reservations document is the missing one, this also releases the parent's reservation. If `ipam alloc list <parent>` still lists the `pool:<child>:<incarnation>` entry afterwards, release it by its full ID with `ipam alloc release <parent> pool:<child>:<incarnation>`, but only once no create of that child is running anywhere. Then apply again.
 - **S3 conditional delete.** Deleting a pool uses a conditional DELETE. The S3 emulators don't enforce it, so it's unproven by the test suite against anything but real AWS.
-- **Real-cloud access rules are untested.** The grants from `terraform-aws-ipam` and `terraform-azurerm-ipam` were tested only in plan mode with mocked providers (`terraform test`), and the AWS environment policy only under MinIO's IAM engine. Enforcement by real AWS IAM and by real Azure RBAC and ABAC conditions hasn't been verified, and neither has the Azure credential path (aztfauth) against real Azure. Grant enforcement is checked only by applying the module and running `ipam doctor --expect-write <own pool> --expect-no-write <other pool>` as each identity. `scripts/e2e.sh` has real-cloud legs (`IPAM_TEST_S3_BUCKET` or `AZURE_STORAGE_ACCOUNT_URL`), but they use the caller's own credentials. They prove the real credential path and real conditional PUTs, not the module grants. Conditional DELETE on real S3 is checked by `IPAM_TEST_S3_BUCKET=<bucket> go test -tags integration ./storage/s3` in [appvia/ipam](https://github.com/appvia/ipam).
+- **Real-cloud access rules are untested.** The grants from `terraform-azurerm-ipam` were tested only in plan mode with mocked providers (`terraform test`), and the AWS environment policy above only under MinIO's IAM engine. Enforcement by real AWS IAM and by real Azure RBAC and ABAC conditions hasn't been verified, and neither has the Azure credential path (aztfauth) against real Azure. Grant enforcement is checked only by applying the module and running `ipam doctor --expect-write <own pool> --expect-no-write <other pool>` as each identity. `scripts/e2e.sh` has real-cloud legs (`IPAM_TEST_S3_BUCKET` or `AZURE_STORAGE_ACCOUNT_URL`), but they use the caller's own credentials. They prove the real credential path and real conditional PUTs, not the module grants. Conditional DELETE on real S3 is checked by `IPAM_TEST_S3_BUCKET=<bucket> go test -tags integration ./storage/s3` in [appvia/ipam](https://github.com/appvia/ipam).
 
 ## Guides
 

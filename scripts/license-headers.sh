@@ -26,7 +26,7 @@ prefix_for() {
   case "$1" in
     */testdata/* | docs/* | templates/*) ;;
     *.go) echo '//' ;;
-    *.sh | *.tf | *.yml | *.yaml | *.toml | Makefile | .gitignore | .shellcheckrc) echo '#' ;;
+    *.sh | *.tf | *.hcl | *.yml | *.yaml | *.toml | Makefile | .gitignore | .shellcheckrc) echo '#' ;;
   esac
 }
 

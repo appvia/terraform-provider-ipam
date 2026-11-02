@@ -22,7 +22,6 @@ set -euo pipefail
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
 ipam_repo="$(cd "${IPAM_REPO:-$repo_root/../ipam}" && pwd)"
-aws_module="$(cd "${IPAM_AWS_MODULE:-$repo_root/../terraform-aws-ipam}" && pwd)"
 backends="${IPAM_E2E_BACKENDS:-local azblob s3}"
 
 export IPAM_AZURITE_PORT="${IPAM_AZURITE_PORT:-10620}"
@@ -548,59 +547,21 @@ force_overlap() {
 }
 
 
+# Prints the environment IAM policy documented in docs/index.md for one pool.
 render_env_policy() {
-	local pool=$1 bucket=$2 dir="$work/aws-policy" mirror="$aws_module/.terraform/providers"
+	local pool=$1 bucket=$2
 
-	mkdir -p "$dir"
-
-	if [[ -d "$mirror/registry.terraform.io/hashicorp/aws" ]]; then
-		cat >"$dir/render.tfrc" <<EOF
-provider_installation {
-  filesystem_mirror {
-    path    = "$mirror"
-    include = ["registry.terraform.io/hashicorp/aws"]
-  }
-  direct {
-    exclude = ["registry.terraform.io/hashicorp/aws"]
-  }
-}
-EOF
-	else
-		printf 'provider_installation {\n  direct {}\n}\n' >"$dir/render.tfrc"
-	fi
-
-	cat >"$dir/main.tf" <<EOF
-provider "aws" {
-  region                      = "us-east-1"
-  access_key                  = "e2e"
-  secret_key                  = "e2e"
-  skip_credentials_validation = true
-  skip_requesting_account_id  = true
-  skip_metadata_api_check     = true
-  skip_region_validation      = true
-}
-
-module "ipam" {
-  source              = "$aws_module"
-  bucket_name         = "$bucket"
-  region              = "us-east-1"
-  platform_role_names = ["e2e-platform"]
-  environments = {
-    e2e = { pool_ids = ["$pool"], role_names = ["e2e-deployer"] }
-  }
-}
-EOF
-
-	(
-		cd "$dir"
-		export TF_CLI_CONFIG_FILE="$dir/render.tfrc"
-		bounded 300 terraform init -input=false -no-color >"$dir/tf.log" 2>&1 &&
-			bounded 300 terraform plan -input=false -no-color -out=tfplan >>"$dir/tf.log" 2>&1 &&
-			terraform show -json tfplan |
-			jq -er '.planned_values.root_module.child_modules[] | select(.address == "module.ipam")
-				| .resources[] | select(.address == "module.ipam.aws_iam_policy.environment[\"e2e\"]")
-				| .values.policy'
-	)
+	jq -n --arg b "arn:aws:s3:::$bucket" --arg p "$pool" '{
+		Version: "2012-10-17",
+		Statement: [
+			{Sid: "ReadDocuments", Effect: "Allow", Action: ["s3:GetObject"],
+				Resource: ["\($b)/pools/*", "\($b)/reservations/*"]},
+			{Sid: "WriteOwnReservations", Effect: "Allow", Action: ["s3:PutObject"],
+				Resource: ["\($b)/reservations/\($p).json"]},
+			{Sid: "BucketRead", Effect: "Allow", Action: ["s3:ListBucket", "s3:GetBucketVersioning"],
+				Resource: [$b]}
+		]
+	}'
 }
 
 run_restricted() {
@@ -611,12 +572,11 @@ run_restricted() {
 	mkdir -p "$flow_dir"
 
 	if ! policy="$(render_env_policy "$pool" "$bucket")"; then
-		tail -n 20 "$work/aws-policy/tf.log" >&2 || true
-		fail "could not render the terraform-aws-ipam environment policy"
+		fail "could not render the environment policy"
 	fi
 
 	printf '%s\n' "$policy" >"$flow_dir/policy.json"
-	log "environment policy rendered by terraform-aws-ipam for pool $pool:"
+	log "documented environment policy for pool $pool:"
 	jq -c '.Statement[] | {Sid, Action, Resource}' "$flow_dir/policy.json" | sed 's/^/    | /'
 
 	expect_rc 0 '' cli pool create "$root" --cidr 172.16.0.0/16

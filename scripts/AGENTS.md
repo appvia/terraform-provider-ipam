@@ -16,9 +16,9 @@ bash scripts/e2e.sh                                  # local azblob s3, then rea
 IPAM_E2E_BACKENDS="local" bash scripts/e2e.sh        # subset of "local azblob s3"
 IPAM_E2E_KEEP=1 ...                                  # keep $TMPDIR/ipam-e2e.XXXXXX (tf.log per tf dir)
 ```
-Env: `IPAM_REPO` (default `../ipam`), `IPAM_AWS_MODULE` (default `../terraform-aws-ipam`), `IPAM_EMULATOR_STATE_DIR` (default `<work>/emulators`), `IPAM_AZURITE_PORT`/`IPAM_S3_PORT`/`IPAM_S3_CONSOLE_PORT` (10620/9620/9621), `IPAM_E2E_FORCE_OVERLAP=1` (local only), `IPAM_TEST_S3_BUCKET` (+`IPAM_TEST_S3_REGION`), `AZURE_STORAGE_ACCOUNT_URL` (+`AZURE_STORAGE_CONTAINER`, default `ipam`).
+Env: `IPAM_REPO` (default `../ipam`), `IPAM_EMULATOR_STATE_DIR` (default `<work>/emulators`), `IPAM_AZURITE_PORT`/`IPAM_S3_PORT`/`IPAM_S3_CONSOLE_PORT` (10620/9620/9621), `IPAM_E2E_FORCE_OVERLAP=1` (local only), `IPAM_TEST_S3_BUCKET` (+`IPAM_TEST_S3_REGION`), `AZURE_STORAGE_ACCOUNT_URL` (+`AZURE_STORAGE_CONTAINER`, default `ipam`).
 
-Requires: sibling `../ipam` (builds `./cmd/ipam`, uses `scripts/emulators/{start-azurite,start-s3,stop}.sh`), sibling `../terraform-aws-ipam` (renders the env IAM policy for `run_restricted`), `terraform`, `jq`, `perl` (`bounded` uses `alarm`), Azurite / MinIO binaries for those legs.
+Requires: sibling `../ipam` (builds `./cmd/ipam`, uses `scripts/emulators/{start-azurite,start-s3,stop}.sh`), `terraform`, `jq`, `perl` (`bounded` uses `alarm`), Azurite / MinIO binaries for those legs.
 
 ## FLOW FACTS
 - Output contract: `E2E PASS <leg>`, `E2E SKIP <leg> (...)`, `E2E NOTE ...`, `E2E FAIL <leg>: <reason>`; `current` names the leg for failure messages; ERR trap records the failing line.
