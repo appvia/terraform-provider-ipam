@@ -27,7 +27,7 @@ resource "ipam_allocation" "vnet" {
 - Data sources: [`ipam_pool`](docs/data-sources/pool.md), [`ipam_allocation`](docs/data-sources/allocation.md).
 - Guide: [provisioning storage and pools in one apply](docs/guides/single-apply.md).
 
-The storage and access grants are provisioned by [terraform-aws-ipam](https://github.com/appvia/terraform-aws-ipam) and [terraform-azurerm-ipam](https://github.com/appvia/terraform-azurerm-ipam). Their grants have been tested only in plan mode and under MinIO's IAM engine, not against real AWS IAM or Azure RBAC and ABAC. The real Azure credential path is untested too. The real-cloud legs of `scripts/e2e.sh` use the caller's own credentials and don't test the grants. See the known limits in the [provider docs](docs/index.md).
+On Azure, the storage and access grants are provisioned by [terraform-azurerm-ipam](https://github.com/appvia/terraform-azurerm-ipam); on AWS, use the IAM policies in the [provider docs](docs/index.md). The module's grants have been tested only in plan mode, and the AWS environment policy only under MinIO's IAM engine, not against real AWS IAM or Azure RBAC and ABAC. The real Azure credential path is untested too. The real-cloud legs of `scripts/e2e.sh` use the caller's own credentials and don't test the grants. See the known limits in the [provider docs](docs/index.md).
 
 ## Development
 
@@ -48,7 +48,7 @@ provider_installation {
 }
 ```
 
-`examples/single-apply/{azure,aws}` hold a contract test between the provisioning modules and this provider (`terraform test`, plan only). They expect the module repositories next to this one and the provider installed from a filesystem mirror as version `0.0.0-dev`.
+`examples/single-apply/azure` holds a contract test between the provisioning module and this provider (`terraform test`, plan only). It expects the module repository next to this one and the provider installed from a filesystem mirror as version `0.0.0-dev`.
 
 `go.mod` depends on the published `github.com/appvia/ipam` client module. `scripts/e2e.sh` still builds the `ipam` CLI from a sibling `../ipam` checkout.
 

@@ -6,9 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-02
+
+### Added
+
+- A `NOTICE` file listing the MPL-2.0 HashiCorp Go modules built into the provider binary, with where to get their source. Release archives now include it.
+
 ### Changed
 
 - Relicensed from MPL-2.0 to Apache-2.0, matching the `github.com/appvia/ipam` library.
+
+### Removed
+
+- References to the `terraform-aws-ipam` module, which doesn't exist, including the AWS single-apply example. On AWS, attach the environment IAM policy shown in the provider docs yourself.
 
 ## [0.2.0] - 2026-10-31
 
@@ -48,7 +58,8 @@ All notable changes to this project are documented here. The format follows
 
 - Depends on the published `github.com/appvia/ipam` v0.1.0 instead of a sibling checkout.
 
-[Unreleased]: https://github.com/appvia/terraform-provider-ipam/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/appvia/terraform-provider-ipam/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/appvia/terraform-provider-ipam/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/appvia/terraform-provider-ipam/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/appvia/terraform-provider-ipam/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/appvia/terraform-provider-ipam/releases/tag/v0.1.0

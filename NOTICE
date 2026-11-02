@@ -1,0 +1,21 @@
+terraform-provider-ipam
+Copyright 2026 Appvia Ltd.
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Binary releases of this product include the following third-party Go modules,
+which are licensed under the Mozilla Public License, Version 2.0 (MPL-2.0).
+They are used unmodified. Their source code is available from the locations
+below, and the MPL-2.0 text is at https://mozilla.org/MPL/2.0/.
+
+  github.com/hashicorp/go-plugin                             https://github.com/hashicorp/go-plugin
+  github.com/hashicorp/go-uuid                               https://github.com/hashicorp/go-uuid
+  github.com/hashicorp/terraform-plugin-framework            https://github.com/hashicorp/terraform-plugin-framework
+  github.com/hashicorp/terraform-plugin-framework-validators https://github.com/hashicorp/terraform-plugin-framework-validators
+  github.com/hashicorp/terraform-plugin-go                   https://github.com/hashicorp/terraform-plugin-go
+  github.com/hashicorp/terraform-plugin-log                  https://github.com/hashicorp/terraform-plugin-log
+  github.com/hashicorp/terraform-registry-address            https://github.com/hashicorp/terraform-registry-address
+  github.com/hashicorp/terraform-svchost                     https://github.com/hashicorp/terraform-svchost
+  github.com/hashicorp/yamux                                 https://github.com/hashicorp/yamux
+
+The exact versions are recorded in go.mod and go.sum.
