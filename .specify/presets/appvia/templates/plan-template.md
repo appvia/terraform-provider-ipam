@@ -1,6 +1,6 @@
 # Technical Design: [FEATURE NAME]
 
-**Spec**: `specs/[REQ-NNNN-slug]/spec.md`
+**Spec**: `specs/[REQ-NNNNNN-slug]/spec.md`
 **Created**: [DATE]
 **Status**: Draft
 **Proposed risk**: [low | medium | high]
@@ -34,8 +34,7 @@
 | II. Test standards | | |
 | III. Technology choice | | |
 | IV. Accessibility | | |
-| V. Data residency | | |
-| VI. Data handling | | |
+| V. Data handling | | |
 
 ## Components
 
