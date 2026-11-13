@@ -1,6 +1,6 @@
 # Technical Design: [FEATURE NAME]
 
-**Spec**: `specs/[REQ-NNNN-slug]/spec.md`
+**Spec**: `specs/[REQ-NNNNNN-slug]/spec.md`
 **Created**: [DATE]
 **Status**: Draft
 **Proposed risk**: [low | medium | high]
@@ -8,7 +8,7 @@
 <!--
   Stage G3. The solution architect writes this file with data-model.md, contracts/,
   decisions/ADR-*.md and, for risk:high, threat-model.md. A tech lead approves it.
-  This is the Spec Kit plan for the whole Requirement, not a Story plan.
+  This is the Spec Kit plan for the whole Requirement. Stories carry no plan of their own.
 -->
 
 ## Summary
@@ -34,8 +34,7 @@
 | II. Test standards | | |
 | III. Technology choice | | |
 | IV. Accessibility | | |
-| V. Data residency | | |
-| VI. Data handling | | |
+| V. Data handling | | |
 
 ## Components
 
