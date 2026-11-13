@@ -89,17 +89,21 @@ This repository takes part in Appvia spec-driven agentic delivery. `appvia/agent
 ## How work arrives
 
 - Requirements become specs under `specs/` (in this repo or the product's spec repo). Specs are sliced into Story, Enabler and Bug issues in the repo that changes.
-- Each Story has seven sections: Spec, What to build, Acceptance criteria, Constraints, Test expectations, Hints, Depends on. Once planned, it also has an `## Implementation plan` with numbered todos and the F1 to F4 final verification rows.
+- Each Story has six sections: Spec, What to build, Acceptance criteria, Constraints, Test expectations, Hints. Those sections are the whole build contract. Dependencies are GitHub Blocked by links on the issue.
+- A delivery engineer applies `gate:ready` (G4) to a Story, Enabler or Bug once it is `stage:ready`. The build starts straight away unless a Blocked by issue is still open; then the router comments and waits, and builds once every blocker is closed as completed. A blocker closed as not planned or duplicate is refused with `needs:human`. It's refused if the issue carries `needs:split`, `needs:human` or `needs:clarification`, its Project Size is L or XL, it fails Story lint, or its Project Agent is unset.
+- The Project's **Agent** field picks the build agent: `implementer-low` for small work confined to one module, `implementer-high` for everything else. Slicing sets it through materialise, from `executor:` in `tasks.md`. When it's unset, readiness-check or a delivery engineer sets it.
+- Stories larger than M are refused with `needs:split`. A delivery engineer can apply `agent:split` to a Story or Enabler with `needs:split` and Size L or XL, and the control plane replaces it with 2 to 6 siblings of size M or smaller and closes it as not planned. Or split it by hand. Bugs are never split.
 - One Story is one agent session and one pull request.
 
 ## Rules for agents
 
 1. Follow `.specify/memory/constitution.md`.
-2. Follow the Implementation plan todo by todo. Copy the todo rows into the PR description and tick each one when its acceptance check passes.
-3. Prove each `AC-n` with a named test. A Bug fix starts with a failing regression test.
-4. Don't touch files, contracts or dependencies the plan lists under "Must NOT have". If the plan is wrong or incomplete, say so in the PR rather than improvise.
-5. The gh-aw implement workflow opens the ready pull request or updates the existing one after review. Agents never write closing keywords; the workflow supplies the Story reference. Never merge, approve reviews or add `gate:*` labels.
-6. Never commit real data, client identifiers or credentials.
-7. Pin dependencies to exact versions and actions to full commit SHAs.
-8. Use the skills in `.github/skills/` for stack conventions (build, test, lint commands).
+2. Build exactly what the Story asks: every acceptance criterion, within every constraint, and nothing more.
+3. Prove each `AC-n` with a named test. A Bug fix starts with a failing regression test, committed alone as `test: reproduce AC-n` before the fix. A Bug that cites a constitution rule (`.specify/memory/constitution.md#C-n.m`) instead commits `test: reproduce C-n.m` first, adding or tightening the automated check that proves the rule.
+4. Respect the Story's Constraints. If the Story is contradictory or can't be built as written, say so instead of improvising.
+5. End the PR description with a `## Final verification` section holding four unticked rows: F1 Story compliance, F2 Code quality, F3 Test evidence, F4 Spec fidelity. Under F1, map each AC to its code and tests and justify every changed file outside the Story's Hints. pr-verify reviews and ticks the rows.
+6. The gh-aw implement workflow opens the ready pull request or updates the existing one after review. Agents never write closing keywords; the workflow supplies the Story reference. Never merge, approve reviews or add `gate:*` labels.
+7. Never commit real data, client identifiers or credentials.
+8. Pin dependencies to exact versions and actions to full commit SHAs.
+9. Use the skills in `.github/skills/` for stack conventions (build, test, lint commands).
 <!-- END agentic-delivery -->
