@@ -1,7 +1,7 @@
 # Tasks: [FEATURE NAME]
 
-**Spec**: `specs/[REQ-NNNN-slug]/spec.md`
-**Design**: `specs/[REQ-NNNN-slug]/plan.md`
+**Spec**: `specs/[REQ-NNNNNN-slug]/spec.md`
+**Design**: `specs/[REQ-NNNNNN-slug]/plan.md`
 **Requirement risk**: [low | medium | high]
 
 <!--
@@ -14,8 +14,12 @@
   - One ```yaml block per Feature, Story or Enabler, with exactly these keys:
     kind, title, parent, repo, area, size, autonomy, risk, spec_path,
     what_to_build, acceptance, constraints, test_expectations, hints, depends_on
+  - executor (optional key): implementer-low | implementer-high. Set it on every
+    Story and Enabler, never on a Feature. implementer-low only for XS or S work
+    confined to one module, with no new public contract and no concurrency or
+    security logic; otherwise implementer-high.
   - kind: feature | story | enabler. Titles are unique in the file.
-  - parent: a Feature's parent is the Requirement id (REQ-NNNN); a Story's or
+  - parent: a Feature's parent is the Requirement id (REQ-NNNNNN); a Story's or
     Enabler's parent is the title of a Feature block in this file.
   - repo: owner/name. One repo per Story; a change to two repos is two Stories.
   - size: XS | S | M | L | XL; Stories and Enablers are M or smaller.
@@ -27,7 +31,7 @@
   Each Story and Enabler key feeds one section of the Story issue:
   spec_path and acceptance ids -> Spec, what_to_build -> What to build,
   acceptance -> Acceptance criteria, constraints -> Constraints,
-  test_expectations -> Test expectations, hints -> Hints, depends_on -> Depends on.
+  test_expectations -> Test expectations, hints -> Hints, depends_on -> GitHub Blocked by links (not a body section).
   Replace the example blocks below; keep the shape.
 -->
 
@@ -36,13 +40,13 @@
 ```yaml
 kind: feature
 title: Tenant admins manage their own users
-parent: REQ-0042
+parent: REQ-000042
 repo: appvia/example-specs
 area: tenants
 size: L
 autonomy: Agent-led
 risk: medium
-spec_path: specs/REQ-0042-tenant-self-service/spec.md
+spec_path: specs/REQ-000042-tenant-self-service/spec.md
 what_to_build: Tenant admins can invite, list and remove users in their own tenant without a support ticket.
 acceptance:
   - AC-1
@@ -62,10 +66,11 @@ title: Add a tenant role to the user model
 parent: Tenant admins manage their own users
 repo: appvia/example-api
 area: tenants
+executor: implementer-low
 size: S
 autonomy: Agent-led
 risk: medium
-spec_path: specs/REQ-0042-tenant-self-service/spec.md
+spec_path: specs/REQ-000042-tenant-self-service/spec.md
 what_to_build: Users carry a tenant role of admin or member, defaulting to member for existing users.
 acceptance:
   - "AC-3: Given an existing user, when the migration runs, then their role is member"
@@ -87,10 +92,11 @@ title: Only tenant admins can invite users
 parent: Tenant admins manage their own users
 repo: appvia/example-api
 area: tenants
+executor: implementer-high
 size: M
 autonomy: Agent-led
 risk: medium
-spec_path: specs/REQ-0042-tenant-self-service/spec.md
+spec_path: specs/REQ-000042-tenant-self-service/spec.md
 what_to_build: A tenant admin can invite a user by email; a member who tries gets a clear refusal and nothing is stored.
 acceptance:
   - "AC-1: Given a tenant admin, when they invite a user, then the user is listed as invited"
