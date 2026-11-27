@@ -14,8 +14,8 @@
   - One ```yaml block per Feature, Story or Enabler, with exactly these keys:
     kind, title, parent, repo, area, size, autonomy, risk, spec_path,
     what_to_build, acceptance, constraints, test_expectations, hints, depends_on
-  - executor (optional key): implementer-low | implementer-high. Set it on every
-    Story and Enabler, never on a Feature. implementer-low only for XS or S work
+  - executor (required for Story and Enabler): implementer-low | implementer-high.
+    Never set it on a Feature. implementer-low only for XS or S work
     confined to one module, with no new public contract and no concurrency or
     security logic; otherwise implementer-high.
   - kind: feature | story | enabler. Titles are unique in the file.
@@ -32,6 +32,10 @@
   spec_path and acceptance ids -> Spec, what_to_build -> What to build,
   acceptance -> Acceptance criteria, constraints -> Constraints,
   test_expectations -> Test expectations, hints -> Hints, depends_on -> GitHub Blocked by links (not a body section).
+  - Each test_expectations entry names its ACs and proof kind (constitution
+    C-II.1): "AC-n test: ..." for behaviour, "AC-n check: ..." for a document's
+    structure (a CI link, path or schema check), "AC-n review: ..." for what a
+    spec, ADR or runbook says. Documentation-only work needs no new tests.
   Replace the example blocks below; keep the shape.
 -->
 
@@ -77,7 +81,7 @@ acceptance:
 constraints:
   - Migration is backwards compatible; no downtime
 test_expectations:
-  - Integration test runs the migration on a seeded synthetic database
+  - "AC-3 test: integration test runs the migration on a seeded synthetic database"
 hints:
   - src/users/model.ts
   - decisions/ADR-0003-tenant-roles.md
@@ -105,8 +109,8 @@ constraints:
   - Honour contracts/tenant.yaml; no response shape changes
   - "NFR-1: p95 invite latency at most 300 ms"
 test_expectations:
-  - Unit tests for the role check
-  - API test per AC
+  - "AC-1, AC-2 test: unit tests for the role check"
+  - "AC-1, AC-2 test: one API test per AC"
 hints:
   - src/tenants/invite.ts
   - src/auth/roles.ts
